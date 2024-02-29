@@ -1,0 +1,13 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dartdetect"
+authors = [
+    {name = "Konrad Lingel"},
+]
+description = "Package to localize darts on a dartboard with a stereo 'linescan' camera pair"
+readme = "README.md"
+requires-python = ">=3.8"
+version = "0.0.1"
