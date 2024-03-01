@@ -15,12 +15,16 @@ def load_calibration_data(path=pathlib.Path.cwd()) -> dict:
         path: str, path to the file
     Returns:
         calib_dict: dict, dictionary containing the calibration data
-            l_mtx: np.array, 3x3, intrinsic matrix of the left camera
-            l_dist: np.array, 1x5, distortion coefficients of the left camera
-            r_mtx: np.array, 3x3, intrinsic matrix of the right camera
-            r_dist: np.array, 1x5, distortion coefficients of the right camera
-            R_l: np.array, 3x3, rotation matrix from the left camera to the right camera
-            T_l: np.array, 3x1, translation vector from the left camera to the right camera
+        l_mtx: np.array, 3x3, intrinsic matrix of the left camera
+        l_dist: np.array, 1x5, distortion coefficients of the left camera
+        r_mtx: np.array, 3x3, intrinsic matrix of the right camera
+        r_dist: np.array, 1x5, distortion coefficients of the right camera
+        R_l: np.array, 3x3, rotation matrix from the left camera to the right camera
+        T_l: np.array, 3x1, translation vector from the left camera to the right camera
+        R_cl_cw_2d: np.array, 2x2, rotation matrix from the left camera
+            coordinate system Cl to the 2D world coordinate system
+        T_cl_cw_2d: np.array, 2x1, translation vector from the left camera
+            coordinate system Cl to the 2D world coordinate system
     """
 
     path = pathlib.Path(path)
@@ -272,3 +276,39 @@ def arrow_img_to_hit_idx_via_lin_fit(arrow_img, distance, debug=False):
     hitpoint = m * (positions_xy[1].max() + distance) + b
 
     return hitpoint, m, b
+
+
+if __name__ == "__main__":
+    import matplotlib.pyplot as plt
+    from matplotlib.widgets import Slider, Button
+
+    calib_dict = load_calibration_data(path="data/calibration_matrices")
+    SL = StereoLocalize(calib_dict)
+
+    # Create a new figure and add a subplot
+    fig = SL.plot_dartboard_emtpy()
+
+    fig.subplots_adjust(bottom=0.25)
+
+    # Create two sliders for adjusting x and y
+    axcolor = "lightgoldenrodyellow"
+    ax_x = plt.axes([0.25, 0.1, 0.65, 0.03], facecolor=axcolor)
+    ax_y = plt.axes([0.25, 0.15, 0.65, 0.03], facecolor=axcolor)
+
+    slider_ul = Slider(ax_x, "Cx left cam", 0, 1240.0, valinit=620)
+    slider_ur = Slider(ax_y, "Cy right cam", 0, 1240.0, valinit=620)
+
+    # Add a button for updating the plot
+    ax_button = plt.axes([0.02, 0.1, 0.1, 0.06])
+    button = Button(ax_button, "Update", color=axcolor, hovercolor="0.975")
+
+    def update_plot(event):
+        ul = slider_ul.val
+        ur = slider_ur.val
+        fig = SL.plot_dartposition(ul, ur, nr=f"({ul:.1f}, {ur:.1f}) ", color="red")
+        fig.canvas.draw_idle()
+        plt.show()
+
+    button.on_clicked(update_plot)
+
+    plt.show()
