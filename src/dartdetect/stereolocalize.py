@@ -285,30 +285,46 @@ if __name__ == "__main__":
     calib_dict = load_calibration_data(path="data/calibration_matrices")
     SL = StereoLocalize(calib_dict)
 
-    # Create a new figure and add a subplot
     fig = SL.plot_dartboard_emtpy()
-
     fig.subplots_adjust(bottom=0.25)
 
     # Create two sliders for adjusting x and y
     axcolor = "lightgoldenrodyellow"
-    ax_x = plt.axes([0.25, 0.1, 0.65, 0.03], facecolor=axcolor)
-    ax_y = plt.axes([0.25, 0.15, 0.65, 0.03], facecolor=axcolor)
+    ax_x = plt.axes([0.3, 0.1, 0.5, 0.03], facecolor=axcolor)
+    ax_y = plt.axes([0.3, 0.05, 0.5, 0.03], facecolor=axcolor)
 
-    slider_ul = Slider(ax_x, "Cx left cam", 0, 1240.0, valinit=620)
-    slider_ur = Slider(ax_y, "Cy right cam", 0, 1240.0, valinit=620)
+    slider_ul = Slider(ax_x, "Cu left cam", 0, 1240.0, valinit=620)
+    slider_ur = Slider(ax_y, "Cu right cam", 0, 1240.0, valinit=620)
 
     # Add a button for updating the plot
-    ax_button = plt.axes([0.02, 0.1, 0.1, 0.06])
-    button = Button(ax_button, "Update", color=axcolor, hovercolor="0.975")
+    ax_button = plt.axes([0.16, 0.15, 0.3, 0.04])
+    button = Button(ax_button, "Throw Dart", color=axcolor, hovercolor="0.975")
+    ax_button_clear = plt.axes([0.56, 0.15, 0.3, 0.04])
+    button_clear = Button(ax_button_clear, "Clear", color=axcolor, hovercolor="0.975")
+
+    dart_point_text = None
 
     def update_plot(event):
+        global dart_point_text
         ul = slider_ul.val
         ur = slider_ur.val
-        fig = SL.plot_dartposition(ul, ur, nr=f"({ul:.1f}, {ur:.1f}) ", color="red")
+        dart_point = SL.get_dartpoint_from_Cu(ul, ur)
+        if dart_point_text:
+            dart_point_text.remove()
+        dart_point_text = plt.text(
+            0, 0, f"Dart Point: {dart_point}", transform=plt.gcf().transFigure
+        )
+
+        fig = SL.plot_dartposition(ul, ur, nr=f"({ul:.1f}, {ur:.1f})")
         fig.canvas.draw_idle()
-        plt.show()
+
+    def clear_plot(event):
+        if dart_point_text:
+            dart_point_text.remove()
+        fig = SL.plot_dartboard_emtpy()
+        fig.canvas.draw_idle()
 
     button.on_clicked(update_plot)
+    button_clear.on_clicked(clear_plot)
 
     plt.show()
