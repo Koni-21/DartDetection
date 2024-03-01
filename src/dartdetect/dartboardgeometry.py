@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 
-class dartboard_geometry:
+class DartboardGeometry:
     def __init__(self):
         """generate a parametrized dartboard in cm coordinates
 
@@ -234,7 +234,7 @@ class dartboard_geometry:
 if __name__ == "__main__":
     x, y = 9, 10
 
-    dart_geo = dartboard_geometry()
+    dart_geo = DartboardGeometry()
     fig = dart_geo.plot_dartboard_emtpy()
 
     def onkey(event):
