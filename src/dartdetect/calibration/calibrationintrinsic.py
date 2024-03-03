@@ -21,6 +21,11 @@ def calibrate_camera(chess_grid, world_scaling, cam, folder_name, show_output=Tr
 
     Note:
         the checkerboard needs a black border
+
+    References:
+        https://docs.opencv.org/4.x/dc/dbb/tutorial_py_calibration.html
+        https://temugeb.github.io/opencv/python/2021/02/02/stereo-camera-calibration-and-triangulation.html
+        https://docs.opencv.org/3.4/d9/d0c/group__calib3d.html
     """
     # termination criteria
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 30, 0.001)
@@ -45,9 +50,7 @@ def calibrate_camera(chess_grid, world_scaling, cam, folder_name, show_output=Tr
         gray_not_inv = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
 
         gray = np.array(255 - gray_not_inv, dtype="uint8")
-        if show_output:
-            cv2.imshow(f"raw img {fname}", gray)
-            cv2.waitKey(500)
+
         # Find the chess board corners
         ret, corners = cv2.findChessboardCorners(gray, chess_grid, flags=None)  # 7,6 #
         # If found, add object points, image points (after refining them)
@@ -59,6 +62,10 @@ def calibrate_camera(chess_grid, world_scaling, cam, folder_name, show_output=Tr
             cv2.drawChessboardCorners(img, chess_grid, corners2, ret)
             if show_output:
                 cv2.imshow(f"found corners in img {fname}", img)
+                cv2.waitKey(500)
+        else:
+            if show_output:
+                cv2.imshow(f"No corners found in inverted img {fname}", gray)
                 cv2.waitKey(500)
 
     # # close windows when "q" or "Esc" key is pressed
@@ -81,6 +88,13 @@ def save_calibration_matrix(folder, mtx, dist, cam):
     np.savez(filename, mtx=mtx, dist=dist)
 
 
+def load_calibration_matrix(folder, cam):
+    filename = Path.joinpath(Path(folder), f"calib_cam_{cam}.npz")
+    with np.load(filename) as X:
+        mtx, dist = [X[i] for i in ("mtx", "dist")]
+    return mtx, dist
+
+
 if __name__ == "__main__":
     chess_grid = (5, 9)
     world_scaling = 1.0289275117277425  # cm
@@ -88,5 +102,5 @@ if __name__ == "__main__":
 
     folder_name = "data/imgs_cam_calib/" + cam + "/"
     mtx, dist = calibrate_camera(chess_grid, world_scaling, cam, folder_name)
-    print(mtx, dist)
-    print("done")
+    print(f"{mtx=},\n {dist=}")
+    # save_calibration_matrix("data/calibration_matrices/", mtx, dist, cam)
