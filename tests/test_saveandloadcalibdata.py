@@ -16,8 +16,8 @@ class TestSaveAndLoadCalibData(unittest.TestCase):
         self.assertIsInstance(calib_dict["l_dist"], np.ndarray)
         self.assertIsInstance(calib_dict["r_mtx"], np.ndarray)
         self.assertIsInstance(calib_dict["r_dist"], np.ndarray)
-        self.assertIsInstance(calib_dict["R_l"], np.ndarray)
-        self.assertIsInstance(calib_dict["T_l"], np.ndarray)
+        self.assertIsInstance(calib_dict["R_cl_cr_2d"], np.ndarray)
+        self.assertIsInstance(calib_dict["T_cl_cr_2d"], np.ndarray)
         self.assertIsInstance(calib_dict["R_cl_cw_2d"], np.ndarray)
         self.assertIsInstance(calib_dict["T_cl_cw_2d"], np.ndarray)
 

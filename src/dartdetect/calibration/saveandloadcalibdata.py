@@ -34,8 +34,8 @@ def load_calibration_data(path=pathlib.Path.cwd()) -> dict:
         "l_dist": None,
         "r_mtx": None,
         "r_dist": None,
-        "R_l": None,
-        "T_l": None,
+        "R_cl_cr_2d": None,
+        "T_cl_cw_2d": None,
         "R_cl_cw_2d": None,
         "T_cl_cw_2d": None,
     }
@@ -50,7 +50,9 @@ def load_calibration_data(path=pathlib.Path.cwd()) -> dict:
                     data[i] for i in ("mtx", "dist")
                 ]
             if ("stereo" and "cr") in str(calib_file):
-                calib_dict["R_l"], calib_dict["T_l"] = [data[i] for i in ("R", "T")]
+                calib_dict["R_cl_cr_2d"], calib_dict["T_cl_cr_2d"] = [
+                    data[i] for i in ("R", "T")
+                ]
             if ("stereo" and "cw") in str(calib_file):
                 calib_dict["R_cl_cw_2d"], calib_dict["T_cl_cw_2d"] = [
                     data[i] for i in ("R", "T")
@@ -83,10 +85,10 @@ def save_calibration_matrix(folder, mtx, dist, cam):
 
 
 def save_steroecalibration(folder, R, T):
-    filename = pathlib.Path.joinpath(pathlib.Path(folder), f"stereo_RT_cl_cr.npz")
+    filename = pathlib.Path.joinpath(pathlib.Path(folder), f"stereo_RT_cl_cr_2d.npz")
     np.savez(filename, R=R, T=T)
 
 
 def save_transformation_cl_cw(folder, R_cl_cw, T_cl_cw):
-    filename = pathlib.Path.joinpath(pathlib.Path(folder), "stereo_RT_cl_cw.npz")
+    filename = pathlib.Path.joinpath(pathlib.Path(folder), "stereo_RT_cl_cw_2d.npz")
     np.savez(filename, R=R_cl_cw, T=T_cl_cw)

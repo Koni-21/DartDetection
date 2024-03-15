@@ -24,37 +24,6 @@ def combine_rt_homogen(R, T):
     return RT
 
 
-def reduce_relations_to_2d(R, T):
-    """Reduces the rotation and translation matrix to 2D, by eliminating
-    the y-component of the translation vector rotation matrix.
-    Args:
-        R: np.array, 3x3, rotation matrix
-        T: np.array, 3x1, translation vector
-    Returns:
-        R_2d: np.array, 2x2, rotation matrix
-        T_2d: np.array, 2x1, translation vector
-    """
-    # angle to turn around the x-axis to eliminate the y-component
-    theta_x = np.arctan(T[1] / T[2])[-1]
-    T_neu = T.copy()
-    T_neu[2] = T[2] / np.cos(theta_x)
-    T_neu[1] = 0
-    # rotate around the x-axis
-    R_x = np.array(
-        [
-            [1, 0, 0],
-            [0, np.cos(theta_x), -np.sin(theta_x)],
-            [0, np.sin(theta_x), np.cos(theta_x)],
-        ]
-    )
-    R_neu = np.dot(R_x, R)
-    theta = np.arctan2(-R_neu[2, 0], np.sqrt(R_neu[2, 1] ** 2 + R_neu[2, 2] ** 2))
-
-    R_2d = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
-    T_2d = np.vstack((T_neu[0], T_neu[2]))
-    return R_2d, T_2d
-
-
 def projectionmatrics(l_mtx, r_mtx, R_l2d, T_l2d):
     """Calculates the projection matrices of the left and right camera.
     Args:
@@ -120,9 +89,8 @@ class StereoLocalize(DartboardGeometry):
         super().__init__()
         self.calib_dict = calib_dict
 
-        R_l2d, T_l2d = reduce_relations_to_2d(
-            self.calib_dict["R_l"], self.calib_dict["T_l"]
-        )
+        R_l2d = self.calib_dict["R_cl_cr_2d"]
+        T_l2d = self.calib_dict["T_cl_cr_2d"]
 
         self.pl, self.pr = projectionmatrics(
             self.calib_dict["l_mtx"], self.calib_dict["r_mtx"], R_l2d, T_l2d

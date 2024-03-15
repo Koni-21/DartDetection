@@ -160,8 +160,41 @@ def stereo_calibrate(
     return R, T, rmse
 
 
+def reduce_relations_to_2d(R, T):
+    """Reduces the rotation and translation matrix to 2D, by eliminating
+    the y-component of the translation vector rotation matrix.
+
+    Args:
+        R: np.array, 3x3, rotation matrix
+        T: np.array, 3x1, translation vector
+
+    Returns:
+        R_2d: np.array, 2x2, rotation matrix
+        T_2d: np.array, 2x1, translation vector
+    """
+    # angle to turn around the x-axis to eliminate the y-component
+    theta_x = np.arctan(T[1] / T[2])[-1]
+    T_neu = T.copy()
+    T_neu[2] = T[2] / np.cos(theta_x)
+    T_neu[1] = 0
+    # rotate around the x-axis
+    R_x = np.array(
+        [
+            [1, 0, 0],
+            [0, np.cos(theta_x), -np.sin(theta_x)],
+            [0, np.sin(theta_x), np.cos(theta_x)],
+        ]
+    )
+    R_neu = np.dot(R_x, R)
+    theta = np.arctan2(-R_neu[2, 0], np.sqrt(R_neu[2, 1] ** 2 + R_neu[2, 2] ** 2))
+
+    R_2d = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
+    T_2d = np.vstack((T_neu[0], T_neu[2]))
+    return R_2d, T_2d
+
+
 if __name__ == "__main__":
-    from dartdetect.calibration import calibrationintrinsic as sl_calib
+    from dartdetect.calibration import saveandloadcalibdata as sl_calib
 
     calibration_folder = "data/calibration_matrices/"
     image_folder = "data/imgs_stereo_calib/"
@@ -191,4 +224,5 @@ if __name__ == "__main__":
     )
     print(f"{R=},\n{T=},\n{rmse=}")
 
-    # sl_calib.save_steroecalibration(calibration_folder, R, T)
+    R_2d, T_2d = reduce_relations_to_2d(R, T)
+    sl_calib.save_steroecalibration(calibration_folder, R_2d, T_2d)

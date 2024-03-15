@@ -21,18 +21,6 @@ class Teststereolocalizefunctions(unittest.TestCase):
         np.testing.assert_array_equal(Pl, expected_Pl)
         np.testing.assert_array_equal(Pr, expected_Pr)
 
-    def test_reduce_relations_to_2d(self):
-        R = np.array([[1, 0, 0], [0, 1, 0], [0, 0, 1]])
-        T = np.array([1, 2, 3]).reshape(-1, 1)
-
-        R_2d, T_2d = dl.reduce_relations_to_2d(R, T)
-
-        expected_R_2d = np.array([[1, 0], [0, 1]])
-        expected_T_2d = np.array([1, 3]).reshape(-1, 1)
-
-        np.testing.assert_array_equal(R_2d, expected_R_2d)
-        np.testing.assert_array_equal(T_2d, expected_T_2d)
-
     def test_combine_rt_homogen(self):
         # Test case 1: Valid inputs
         R = np.array([[1, 0], [0, 1]])
@@ -112,8 +100,8 @@ class TestStereoLocalize(unittest.TestCase):
             "l_dist": np.array([0, 0, 0, 0, 0]),
             "r_mtx": np.array([[1100, 0, 550], [0, 900, 450], [0, 0, 1]]),
             "r_dist": np.array([0, 0, 0, 0, 0]),
-            "R_l": np.array([[0, 0, 1], [0, 1, 0], [-1, 0, 0]]),
-            "T_l": np.array([[-45], [0], [45]]),
+            "R_cl_cr_2d": np.array([[0, -1], [1, 0]]),
+            "T_cl_cr_2d": np.array([[-45], [45]]),
             "R_cl_cw_2d": np.array([[0.7, 0.7], [-0.7, 0.7]]),
             "T_cl_cw_2d": np.array([[32], [32]]),
         }
