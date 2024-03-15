@@ -145,42 +145,6 @@ class StereoLocalize(DartboardGeometry):
         return super().plot_dartposition(xy[0], xy[1], nr, color)
 
 
-def arrow_img_to_hit_idx_via_lin_fit(arrow_img, distance, debug=False):
-    """Calculates the hitpoint coordinate of an arrow in an image via linear regression.
-
-    Args:
-        arrow_img: np.array, 2D, binary image of the arrow mask
-        distance: int, distance in pixels from the lower image edge to
-            the upper dartboard edge
-        debug: bool, if True, the regression line is plotted
-
-    returns:
-        hitpoint: float, x-coordinate of the hitpoint
-        m: float, slope of the regression line
-        b: float, x-intercept of the regression line
-
-    note:
-        example arrow_img, size 10x5:
-        0 0 0 1 1 1 1 0 0 0
-        0 0 0 1 1 1 1 0 0 0
-        0 0 0 0 1 1 0 0 0 0
-        0 0 0 0 1 1 0 0 0 0
-        0 0 0 0 1 1 0 0 0 0
-    """
-    positions_xy = arrow_img.T.nonzero()
-
-    # fit straight line via regression:
-    m, b = np.polyfit(positions_xy[1], positions_xy[0], 1)
-
-    if debug:
-        plt.scatter(positions_xy[1], positions_xy[0])
-        plt.plot(positions_xy[1], m * positions_xy[0] + b, color="red")
-
-    hitpoint = m * (positions_xy[1].max() + distance) + b
-
-    return hitpoint, m, b
-
-
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
     import dartdetect.calibration.saveandloadcalibdata as sl_calib

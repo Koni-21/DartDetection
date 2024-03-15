@@ -31,30 +31,6 @@ class Teststereolocalizefunctions(unittest.TestCase):
 
         np.testing.assert_array_equal(RT, expected_RT)
 
-    def test_arrow_img_to_hit_idx_via_lin_fit(self):
-        arrow_img = np.array(
-            [
-                [0, 0, 0, 1, 1, 1, 1, 0, 0, 0],
-                [0, 0, 0, 1, 1, 1, 1, 0, 0, 0],
-                [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
-                [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
-                [0, 0, 0, 0, 1, 1, 0, 0, 0, 0],
-            ]
-        )
-
-        distance = 5
-        hitpoint, m, b = dl.arrow_img_to_hit_idx_via_lin_fit(
-            arrow_img, distance, debug=False
-        )
-
-        expected_hitpoint = 4.5
-        expected_m = 0
-        expected_b = 4.5
-
-        self.assertAlmostEqual(hitpoint, expected_hitpoint)
-        self.assertAlmostEqual(m, expected_m)
-        self.assertAlmostEqual(b, expected_b)
-
     def test_DLT(self):
         """
         This test verifies that the DLT method correctly computes the 3D point
