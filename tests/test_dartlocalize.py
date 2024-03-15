@@ -72,9 +72,8 @@ class TestDartLocalize(unittest.TestCase):
         self.camera = "left"
         self.calibration_path = pathlib.Path("data/calibration_matrices")
         self.model_path = pathlib.Path("data/segmentation_model/yolov8_seg_dart.pt")
-        self.distance = 0
         self.DartLocal = dl.DartLocalize(
-            self.img, self.camera, self.calibration_path, self.model_path, self.distance
+            self.camera, self.calibration_path, self.model_path
         )
 
     def test_undistort(self):

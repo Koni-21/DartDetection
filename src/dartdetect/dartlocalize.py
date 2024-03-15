@@ -42,7 +42,7 @@ class DartLocalize:
     Class for localizing the hitpoints of darts in an image.
     """
 
-    def __init__(self, img, camera, calibration_path, model_path, distance):
+    def __init__(self, camera, calibration_path, model_path, w=1240, h=90, distance=0):
         """
         Args:
             img: np.array, 2D, example image of one camera view
@@ -57,7 +57,6 @@ class DartLocalize:
         self.distance = distance
         self.mtx, self.dist = sl_calib.load_calibration_matrix(calibration_path, camera)
         # calculate new camera matrix
-        h, w = img.shape[:2]
         self.newcameramtx, roi = cv2.getOptimalNewCameraMatrix(
             self.mtx, self.dist, (w, h), 0, (w, h)
         )
@@ -132,11 +131,9 @@ if __name__ == "__main__":
 
     img = cv2.imread(str(predict_imgs[0]))
     Darts_Left = DartLocalize(
-        img,
         "left",
         pathlib.Path("data/calibration_matrices"),
         pathlib.Path("data/segmentation_model/yolov8_seg_dart.pt"),
-        0,
     )
 
     # Segmentation mask is inaccurate! --> ai needs improvement or replacement

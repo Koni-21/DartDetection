@@ -63,15 +63,23 @@ def calculate_cl_cw(ref_darts_cw, ref_darts_cl):
         the approach is not optimal and a bit complicated. Better approach is to
         solve the dot product of cw = RT $\cdot$ cl with a least squares approach.
     """
+    keys_cw, keys_cl = list(ref_darts_cw.keys()), list(ref_darts_cl.keys())
 
-    if ref_darts_cw.keys() != ref_darts_cl.keys():
-        raise (KeyError("The reference points are the same"))
+    keys_cw.sort(), keys_cl.sort()
+    if keys_cw != keys_cl:
+        raise (
+            KeyError(
+                f"The reference points are not the same: "
+                f"Missing Keys in cl{[missing_key for missing_key in keys_cw if missing_key not in keys_cl]}, "
+                f"Missing Keys in cw{[missing_key for missing_key in keys_cl if missing_key not in keys_cw]}, "
+            )
+        )
     if ref_darts_cw.get("center", None) is None:
         raise (KeyError("The key 'center' must be defined in both dictionaries"))
 
     angles = []
     # Generate all binomial pairs of keys
-    pairs = list(combinations(ref_darts_cw.keys(), 2))
+    pairs = list(combinations(keys_cw, 2))
     for pos1, pos2 in pairs:
         angle = Cl_Cw_angle_from_two_vectors(
             ref_darts_cw[pos1],
@@ -107,7 +115,7 @@ def calculate_cl_cw(ref_darts_cw, ref_darts_cl):
 
     T_cl_cw = tr_cl_cw[:2, 2]
     R_cl_cw = tr_cl_cw[0:2, 0:2]
-    LOGGER.info(f"{tr_cl_cw=}, \n{T_cl_cw=},\n {R_cl_cw=}")
+    LOGGER.info(f"{tr_cl_cw=}, \n {T_cl_cw=},\n {R_cl_cw=}")
     return R_cl_cw, T_cl_cw
 
 
@@ -152,31 +160,99 @@ class CuToCl(stereolocalize.StereoLocalize):
         return dict_of_cl
 
 
+def generate_dict_of_cu_from_images(folder_test_images, DartRight, DartLeft):
+    """
+    Generate a dictionary of Cu values from a folder of test images.
+
+    Args:
+        folder_test_images (str): The path to the folder containing the test images.
+        DartRight (dartdetect.dartlocalize.DartLocalize class): A class object
+            that takes an image and returns the Cu value for the right dart.
+        DartLeft (dartdetect.dartlocalize.DartLocalize class): A class object
+            that takes an image and returns the Cu value for the left dart.
+
+    Returns:
+        dict: A dictionary where the keys are image names and the values
+        are lists of Cu values for the left and right darts.
+
+    Raises:
+        ValueError: If the keys of the left and right images are not the same.
+
+    """
+    path = pathlib.Path(folder_test_images)
+    predict_imgs_l = [
+        img for img in path.iterdir() if img.is_file() and "left" in str(img)
+    ]
+    predict_imgs_r = [
+        img for img in path.iterdir() if img.is_file() and "right" in str(img)
+    ]
+
+    keys_l = [str(img_name).split("cam_left_")[1][:-4] for img_name in predict_imgs_l]
+    keys_r = [str(img_name).split("cam_right_")[1][:-4] for img_name in predict_imgs_r]
+
+    keys_l.sort()
+    keys_r.sort()
+
+    if keys_l != keys_r:
+        raise (
+            ValueError(
+                f"The keys of the images are not the same: \n {keys_l=}, \n {keys_r=}"
+            )
+        )
+
+    Cu_dict = {}
+    for key in keys_l:
+        filename_l = [name for name in predict_imgs_l if key in str(name)][0]
+        filename_r = [name for name in predict_imgs_r if key in str(name)][0]
+        ul, _, _ = DartLeft(cv2.imread(filename_l))
+        ur, _, _ = DartRight(cv2.imread(filename_r))
+        Cu_dict[key] = [ul[0], ur[0]]
+
+    return Cu_dict
+
+
 if __name__ == "__main__":
+    import pathlib
+    import cv2
+
     import dartdetect.calibration.saveandloadcalibdata as sl_calib
+    import dartdetect.dartlocalize as dl
 
     ref_darts_cw = {
         "center": [0, 0],
         "x2y0cm": [2, 0],
+        "x0y2cm": [0, 2],
         "x10y0cm": [10, 0],
         "x0y10cm": [0, 10],
+        "s20id": [-2.26067, 15.68795],
+        "s20it": [-1.37209, 9.52165],
+        "s11id": [-15.68795, 2.26067],
+        "s11it": [-9.52165, 1.37209],
+        "s3id": [-2.26067, -15.68795],
+        "s3it": [-1.37209, -9.52165],
+        "s6id": [15.68795, 2.26067],
+        "s6it": [9.52165, 1.37209],
+        "t10": [9.41, -4.69],
     }
-    ref_darts_cl = {
-        "center": [1.25, -45.33],
-        "x2y0cm": [-0.14, -46.84],
-        "x10y0cm": [-5.66, -52.84],
-        "x0y10cm": [8.50, -52.31],
-    }
-    calculate_cl_cw(ref_darts_cw, ref_darts_cl)
 
+    folder_test_images = "data/imgs_dartboard_calib"
+    DartLeft = dl.DartLocalize(
+        "left",
+        pathlib.Path("data/calibration_matrices"),
+        pathlib.Path("data/segmentation_model/yolov8_seg_dart.pt"),
+    )
+    DartRight = dl.DartLocalize(
+        "right",
+        pathlib.Path("data/calibration_matrices"),
+        pathlib.Path("data/segmentation_model/yolov8_seg_dart.pt"),
+    )
+
+    ref_darts_cu = generate_dict_of_cu_from_images(
+        folder_test_images, DartRight, DartLeft
+    )
+    print(ref_darts_cu)
     calib_dict = sl_calib.load_calibration_data(path="data/calibration_matrices")
     Cu_to_Cl = CuToCl(calib_dict)
-    print(Cu_to_Cl(640, 640))
+    ref_darts_cl = Cu_to_Cl.dict_of_cu_to_cl(ref_darts_cu)
 
-    ref_darts_cu = {
-        "center": [640, 640],
-        "x2y0cm": [660, 640],
-        "x10y0cm": [740, 640],
-        "x0y10cm": [640, 740],
-    }
-    print(Cu_to_Cl.dict_of_cu_to_cl(ref_darts_cu))
+    print(calculate_cl_cw(ref_darts_cw, ref_darts_cl))
