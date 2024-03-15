@@ -28,11 +28,11 @@ def arrow_img_to_hit_idx_via_lin_fit(arrow_img, distance):
         0 0 0 0 1 1 0 0 0 0
         0 0 0 0 1 1 0 0 0 0
     """
-    positions_xy = arrow_img.T.nonzero()
+    positions_xy = arrow_img.nonzero()
 
     # fit straight line via regression:
-    m, b = np.polyfit(positions_xy[1], positions_xy[0], 1)
-    hitpoint = m * (positions_xy[1].max() + distance) + b
+    b, m = np.polynomial.polynomial.polyfit(positions_xy[0], positions_xy[1], 1)
+    hitpoint = m * (positions_xy[0].max() + distance) + b
 
     return hitpoint, m, b
 
