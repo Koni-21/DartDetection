@@ -1,40 +1,11 @@
 import unittest
-import logging
 import numpy as np
-from pathlib import Path
 from matplotlib import pyplot as plt
 
 import dartdetect.stereolocalize as dl
 
 
 class Teststereolocalizefunctions(unittest.TestCase):
-    def test_load_calibration_data(self):
-        # Test case 1: Valid calibration files
-        path = Path("data\calibration_matrices")
-        calib_dict = dl.load_calibration_data(path)
-
-        self.assertIsInstance(calib_dict, dict)
-        self.assertIsInstance(calib_dict["l_mtx"], np.ndarray)
-        self.assertIsInstance(calib_dict["l_dist"], np.ndarray)
-        self.assertIsInstance(calib_dict["r_mtx"], np.ndarray)
-        self.assertIsInstance(calib_dict["r_dist"], np.ndarray)
-        self.assertIsInstance(calib_dict["R_l"], np.ndarray)
-        self.assertIsInstance(calib_dict["T_l"], np.ndarray)
-        self.assertIsInstance(calib_dict["R_cl_cw_2d"], np.ndarray)
-        self.assertIsInstance(calib_dict["T_cl_cw_2d"], np.ndarray)
-
-        # Test case 2: Missing calibration files
-        path = Path("data\imgs_cam_calib")
-
-        with self.assertRaises(IOError) as error:
-            dl.load_calibration_data(path)
-            self.assertEqual(
-                str(error.exception),
-                "Did not find all calibration files in data\imgs_cam_calib, with .npz files: []",
-            )
-            with self.assertLogs(level=logging.ERROR) as log:
-                dl.load_calibration_data(path)
-            self.assertIn("ERROR:root:Missing calibration file for T_l", log.output)
 
     def test_projectionmatrics(self):
         l_mtx = np.array([[1, 0, 2], [0, 1, 3], [0, 0, 1]])
@@ -199,18 +170,18 @@ class TestStereoLocalize(unittest.TestCase):
         Cur = 560
         nr = "Dart Bullseye"
         self.dart_detect.plot_dartboard_emtpy()
-        self.dart_detect.plot_dartposition(Cul, Cur, nr)
+        self.dart_detect.plot_dartposition_from_Cu(Cul, Cur, nr)
 
         # camera coordinates for double 20 (up)
         Cul, Cur = 280, 770
         nr = "Dart d20"
-        self.dart_detect.plot_dartposition(Cul, Cur, nr)
+        self.dart_detect.plot_dartposition_from_Cu(Cul, Cur, nr)
         # camera coordinates for double 3 (down)
-        self.dart_detect.plot_dartposition(815, 160, "Dart d3")
+        self.dart_detect.plot_dartposition_from_Cu(815, 160, "Dart d3")
         # camera coordinates for double 11 (left)
-        self.dart_detect.plot_dartposition(150, 350, "Dart d11")
+        self.dart_detect.plot_dartposition_from_Cu(150, 350, "Dart d11")
         # camera coordinates for double 6 (right)
-        fig = self.dart_detect.plot_dartposition(700, 950, "Dart d6")
+        fig = self.dart_detect.plot_dartposition_from_Cu(700, 950, "Dart d6")
         # plt.show()
         self.assertEqual(fig.get_figwidth(), 10.0)
 

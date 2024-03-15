@@ -160,13 +160,8 @@ def stereo_calibrate(
     return R, T, rmse
 
 
-def save_steroecalibration(folder, R, T):
-    filename = Path.joinpath(Path(folder), f"stereo_RT_cl_cr.npz")
-    np.savez(filename, R=R, T=T)
-
-
 if __name__ == "__main__":
-    from dartdetect.calibration.calibrationintrinsic import load_calibration_matrix
+    from dartdetect.calibration import calibrationintrinsic as sl_calib
 
     calibration_folder = "data/calibration_matrices/"
     image_folder = "data/imgs_stereo_calib/"
@@ -174,8 +169,8 @@ if __name__ == "__main__":
     cam0 = "left"
     cam1 = "right"
 
-    mtx0, dist0 = load_calibration_matrix(calibration_folder, cam0)
-    mtx1, dist1 = load_calibration_matrix(calibration_folder, cam1)
+    mtx0, dist0 = sl_calib.load_calibration_matrix(calibration_folder, cam0)
+    mtx1, dist1 = sl_calib.load_calibration_matrix(calibration_folder, cam1)
 
     # calibration pattern settings
     chessgrid = (5, 9)
@@ -196,4 +191,4 @@ if __name__ == "__main__":
     )
     print(f"{R=},\n{T=},\n{rmse=}")
 
-    # save_steroecalibration(calibration_folder, R, T)
+    # sl_calib.save_steroecalibration(calibration_folder, R, T)

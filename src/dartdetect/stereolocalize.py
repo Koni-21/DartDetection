@@ -9,68 +9,19 @@ logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger()
 
 
-def load_calibration_data(path=pathlib.Path.cwd()) -> dict:
-    """Loads the calibration data from a file.
+def combine_rt_homogen(R, T):
+    """Combines the rotation and translation matrix to a 3x3 matrix in
+     homogeneous coordinates.
     Args:
-        path: str, path to the file
+        R: np.array, 2x2, rotation matrix
+        T: np.array, 2x1, translation vector
     Returns:
-        calib_dict: dict, dictionary containing the calibration data
-        l_mtx: np.array, 3x3, intrinsic matrix of the left camera
-        l_dist: np.array, 1x5, distortion coefficients of the left camera
-        r_mtx: np.array, 3x3, intrinsic matrix of the right camera
-        r_dist: np.array, 1x5, distortion coefficients of the right camera
-        R_l: np.array, 3x3, rotation matrix from the left camera to the right camera
-        T_l: np.array, 3x1, translation vector from the left camera to the right camera
-        R_cl_cw_2d: np.array, 2x2, rotation matrix from the left camera
-            coordinate system Cl to the 2D world coordinate system
-        T_cl_cw_2d: np.array, 2x1, translation vector from the left camera
-            coordinate system Cl to the 2D world coordinate system
+        RT: np.array, 3x3, combined rotation and translation matrix in homogeneous coordinates
     """
-
-    path = pathlib.Path(path)
-    file_list = pathlib.Path.iterdir(path)
-    # Find the part of the filename in files
-    calib_files = [file for file in file_list if str(file).endswith(".npz")]
-
-    calib_dict = {
-        "l_mtx": None,
-        "l_dist": None,
-        "r_mtx": None,
-        "r_dist": None,
-        "R_l": None,
-        "T_l": None,
-        "R_cl_cw_2d": None,
-        "T_cl_cw_2d": None,
-    }
-    for calib_file in calib_files:
-        with np.load(calib_file) as data:
-            if "left" in str(calib_file):
-                calib_dict["l_mtx"], calib_dict["l_dist"] = [
-                    data[i] for i in ("mtx", "dist")
-                ]
-            if "right" in str(calib_file):
-                calib_dict["r_mtx"], calib_dict["r_dist"] = [
-                    data[i] for i in ("mtx", "dist")
-                ]
-            if ("stereo" and "cr") in str(calib_file):
-                calib_dict["R_l"], calib_dict["T_l"] = [data[i] for i in ("R", "T")]
-            if ("stereo" and "cw") in str(calib_file):
-                calib_dict["R_cl_cw_2d"], calib_dict["T_cl_cw_2d"] = [
-                    data[i] for i in ("R", "T")
-                ]
-
-    [
-        LOGGER.error(f"Missing calibration file for {key}")
-        for key, value in calib_dict.items()
-        if value is None
-    ]
-
-    if None in [x for x in calib_dict.values() if x is None]:
-        raise IOError(
-            f"Did not find all calibration files in {path}, with .npz files: {calib_files}."
-        )
-
-    return calib_dict
+    T = T.reshape(2, 1)
+    RT = np.hstack((R, T))
+    RT = np.vstack((RT, [0, 0, 1]))
+    return RT
 
 
 def reduce_relations_to_2d(R, T):
@@ -102,21 +53,6 @@ def reduce_relations_to_2d(R, T):
     R_2d = np.array([[np.cos(theta), -np.sin(theta)], [np.sin(theta), np.cos(theta)]])
     T_2d = np.vstack((T_neu[0], T_neu[2]))
     return R_2d, T_2d
-
-
-def combine_rt_homogen(R, T):
-    """Combines the rotation and translation matrix to a 3x3 matrix in
-     homogeneous coordinates.
-    Args:
-        R: np.array, 2x2, rotation matrix
-        T: np.array, 2x1, translation vector
-    Returns:
-        RT: np.array, 3x3, combined rotation and translation matrix in homogeneous coordinates
-    """
-    T = T.reshape(2, 1)
-    RT = np.hstack((R, T))
-    RT = np.vstack((RT, [0, 0, 1]))
-    return RT
 
 
 def projectionmatrics(l_mtx, r_mtx, R_l2d, T_l2d):
@@ -174,13 +110,12 @@ def tr_c1_cw():
 
 
 class StereoLocalize(DartboardGeometry):
-    def __init__(self, calib_dict, debug=False):
+    def __init__(self, calib_dict):
         """
         Initializes the DartDetect class.
 
         Args:
             calib_dict: dict, calibration dictionary containing camera parameters
-            debug: bool, optional, flag to enable debug mode (default is False)
         """
         super().__init__()
         self.calib_dict = calib_dict
@@ -225,7 +160,7 @@ class StereoLocalize(DartboardGeometry):
         point = self.get_dartpoint_from_cart_coordinates(xy[0], xy[1])
         return point
 
-    def plot_dartposition(self, Cul, Cur, nr="", color="navy"):
+    def plot_dartposition_from_Cu(self, Cul, Cur, nr="", color="navy"):
         """
         Plot the position of a dart on a graph.
 
@@ -280,9 +215,10 @@ def arrow_img_to_hit_idx_via_lin_fit(arrow_img, distance, debug=False):
 
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
+    import dartdetect.calibration.saveandloadcalibdata as sl_calib
     from matplotlib.widgets import Slider, Button
 
-    calib_dict = load_calibration_data(path="data/calibration_matrices")
+    calib_dict = sl_calib.load_calibration_data(path="data/calibration_matrices")
     SL = StereoLocalize(calib_dict)
 
     fig = SL.plot_dartboard_emtpy()
@@ -315,7 +251,7 @@ if __name__ == "__main__":
             0, 0, f"Dart Point: {dart_point}", transform=plt.gcf().transFigure
         )
 
-        fig = SL.plot_dartposition(ul, ur, nr=f"({ul:.1f}, {ur:.1f})")
+        fig = SL.plot_dartposition_from_Cu(ul, ur, nr=f"({ul:.1f}, {ur:.1f})")
         fig.canvas.draw_idle()
 
     def clear_plot(event):

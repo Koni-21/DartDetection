@@ -83,19 +83,10 @@ def calibrate_camera(chess_grid, world_scaling, cam, folder_name, show_output=Tr
     return mtx, dist
 
 
-def save_calibration_matrix(folder, mtx, dist, cam):
-    filename = Path.joinpath(Path(folder), f"calib_cam_{cam}.npz")
-    np.savez(filename, mtx=mtx, dist=dist)
-
-
-def load_calibration_matrix(folder, cam):
-    filename = Path.joinpath(Path(folder), f"calib_cam_{cam}.npz")
-    with np.load(filename) as X:
-        mtx, dist = [X[i] for i in ("mtx", "dist")]
-    return mtx, dist
-
-
 if __name__ == "__main__":
+
+    import dartdetect.calibration.saveandloadcalibdata as sl_calib
+
     chess_grid = (5, 9)
     world_scaling = 1.0289275117277425  # cm
     cam = "left"
@@ -103,4 +94,4 @@ if __name__ == "__main__":
     folder_name = "data/imgs_cam_calib/" + cam + "/"
     mtx, dist = calibrate_camera(chess_grid, world_scaling, cam, folder_name)
     print(f"{mtx=},\n {dist=}")
-    # save_calibration_matrix("data/calibration_matrices/", mtx, dist, cam)
+    # sl_calib.save_calibration_matrix("data/calibration_matrices/", mtx, dist, cam)
