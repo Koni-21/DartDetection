@@ -15,7 +15,6 @@ from dartdetect.singlecamdartlocalize import (
     dart_fully_arrived,
     dart_moved,
     overlap,
-    has_overlap,
     differentiate_overlap,
     filter_cluster_by_usable_rows,
     calculate_position_from_cluster_and_image,
@@ -389,37 +388,6 @@ class TestOverlap(unittest.TestCase):
         )
 
 
-class TestHasOverlap(unittest.TestCase):
-    def test_has_overlap_no_overlap(self):
-        cluster = np.array([[0, 0], [1, 1], [2, 2]])
-        saved_dart_cluster = np.array([[3, 3], [4, 4], [5, 5]])
-        self.assertFalse(has_overlap(cluster, saved_dart_cluster))
-
-    def test_has_overlap_partial_overlap(self):
-        cluster = np.array([[0, 0], [1, 1], [2, 2]])
-        saved_dart_cluster = np.array([[1, 1], [3, 3], [4, 4]])
-        self.assertTrue(has_overlap(cluster, saved_dart_cluster))
-
-    def test_has_overlap_full_overlap(self):
-        cluster = np.array([[0, 0], [1, 1], [2, 2]])
-        saved_dart_cluster = np.array([[0, 0], [1, 1], [2, 2]])
-        self.assertTrue(has_overlap(cluster, saved_dart_cluster))
-
-    def test_has_overlap_empty_clusters(self):
-        cluster = np.array([])
-        saved_dart_cluster = np.array([])
-        self.assertFalse(has_overlap(cluster, saved_dart_cluster))
-
-    def test_has_overlap_one_empty_cluster(self):
-        cluster = np.array([[0, 0], [1, 1], [2, 2]])
-        saved_dart_cluster = np.array([])
-        self.assertFalse(has_overlap(cluster, saved_dart_cluster))
-
-        cluster = np.array([])
-        saved_dart_cluster = np.array([[0, 0], [1, 1], [2, 2]])
-        self.assertFalse(has_overlap(cluster, saved_dart_cluster))
-
-
 class TestDifferentiateOverlap(unittest.TestCase):
     def test_differentiate_overlap_partial_overlap(self):
         cluster = np.array([[0, 0], [1, 1], [2, 2]])
@@ -781,7 +749,7 @@ class TestCheckOverlap(unittest.TestCase):
         expected_output = {
             "overlapping_darts": [1, 2],
             "occlusion_kind": "one_side_fully_occluded",
-            "overlap_points": np.array([[0, 0], [1, 1], [2, 2]]),
+            "overlap_points": np.array([[1, 1], [0, 0], [2, 2]]),
             "fully_usable_rows": [],
             "middle_occluded_rows": [],
             "left_side_overlap": 3,

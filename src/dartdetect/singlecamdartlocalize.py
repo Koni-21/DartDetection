@@ -155,7 +155,9 @@ def get_roi_coords(diff_img, incoming=True, thresh_binarise=0.1):
     return coordinates
 
 
-def find_clusters(coordinates, thresh_n_pixels_dart=10):
+def find_clusters(
+    coordinates, thresh_n_pixels_dart=10, dbscan_eps=1, dbscan_min_samples=2
+):
     """
     Apply DBSCAN clustering to a set of coordinates and filter clusters
     based on a pixel count threshold.
@@ -164,11 +166,15 @@ def find_clusters(coordinates, thresh_n_pixels_dart=10):
         coordinates (array-like): An array of coordinate points to be clustered.
         thresh_n_pixels_dart (int, optional): The minimum number of points
             required in a cluster to be considered valid. Default is 10.
+        dbscan_eps (int): See sklearn.cluster.DBSCAN. (Defaults to 1)
+        dbscan_min_samples (int): See sklearn.cluster.DBSCAN. (Defaults to 1)
     Returns:
         list: A list of arrays, each containing the coordinates of a valid cluster.
     """
     # Apply DBSCAN clustering (like flood fill with nearest neighbor = 1)
-    dbscan_cluster_in = DBSCAN(eps=1, min_samples=2).fit(coordinates)
+    dbscan_cluster_in = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples).fit(
+        coordinates
+    )
 
     clustered_dartsegments_coords = []
     for label in np.unique(dbscan_cluster_in.labels_):
@@ -180,7 +186,13 @@ def find_clusters(coordinates, thresh_n_pixels_dart=10):
     return clustered_dartsegments_coords
 
 
-def try_get_clusters_in_out(diff_img, thresh_binarise=0.1, thresh_n_pixels_dart=2):
+def try_get_clusters_in_out(
+    diff_img,
+    thresh_binarise=0.1,
+    thresh_n_pixels_dart=2,
+    dbscan_eps=1,
+    dbscan_min_samples=1,
+):
     """
     Attempts to get clusters of coordinates from regions of interest (ROI)
     in an image.
@@ -191,6 +203,9 @@ def try_get_clusters_in_out(diff_img, thresh_binarise=0.1, thresh_n_pixels_dart=
             the image. Default is 0.1.
         thresh_n_pixels_dart (int, optional): The minimum number of pixels
             required to consider a cluster as a dart. Default is 2.
+        dbscan_eps (int): See sklearn.cluster.DBSCAN. (Defaults to 1)
+        dbscan_min_samples (int): See sklearn.cluster.DBSCAN. (Defaults to 1)
+
     Returns:
         tuple: A tuple containing two elements:
             - clusters_in (list or None): List of clusters found in the
@@ -204,12 +219,16 @@ def try_get_clusters_in_out(diff_img, thresh_binarise=0.1, thresh_n_pixels_dart=
     )
 
     if len(coords_in) > thresh_n_pixels_dart:
-        clusters_in = find_clusters(coords_in, thresh_n_pixels_dart)
+        clusters_in = find_clusters(
+            coords_in, thresh_n_pixels_dart, dbscan_eps, dbscan_min_samples
+        )
     else:
         clusters_in = []
 
     if len(coords_out) > thresh_n_pixels_dart:
-        clusters_out = find_clusters(coords_out, thresh_n_pixels_dart)
+        clusters_out = find_clusters(
+            coords_out, thresh_n_pixels_dart, dbscan_eps, dbscan_min_samples
+        )
     else:
         clusters_out = []
 
@@ -367,32 +386,10 @@ def overlap(cluster, saved_dart_cluster):
     Returns:
         numpy.ndarray: An array of points that are present in both clusters.
     """
-    overlapping_points = []
-    for point in cluster:
-        for saved_point in saved_dart_cluster:
-            if tuple(point) == tuple(saved_point):
-                overlapping_points.append(point)
-    return np.array(overlapping_points)
-
-
-def has_overlap(cluster, saved_dart_cluster):
-    """
-    Checks if there is an overlap between two dart clusters.
-
-    Args:
-        cluster (list): The current dart cluster to check.
-        saved_dart_cluster (list): The saved dart cluster to compare against.
-
-    Returns:
-        bool: True if there is an overlap between the clusters, False otherwise.
-    """
-    overlapping_points = overlap(cluster, saved_dart_cluster)
-    if len(overlapping_points) != 0:
-        LOGGER.info(
-            f"The Dart has an overlap with an other dart: {len(overlapping_points)=}"
-        )
-        return True
-    return False
+    cluster_set = set(map(tuple, cluster))
+    saved_dart_set = set(map(tuple, saved_dart_cluster))
+    overlapping_points = np.array(list(cluster_set & saved_dart_set))
+    return overlapping_points
 
 
 def differentiate_overlap(cluster, overlap_points):
@@ -525,13 +522,15 @@ def occlusion_kind(occluded_rows, thresh_needed_rows=2):
         return "one_side_fully_occluded"
 
 
-def check_overlap(cluster_in, saved_darts):
+def check_overlap(cluster_in, saved_darts, thresh_overlapping_points=1):
     """
     Check for overlap between the current dart cluster and previously saved darts.
 
     Args:
         cluster_in (dict): The current dart cluster to check for overlap.
         saved_darts (dict): A dictionary of previously saved darts with their clusters.
+        thresh_overlapping_points (int): minimum overlapping points to count as
+            overlapping darts. Defaults to 1.
 
     Returns:
         dict: A dictionary containing information about the overlap if any is found.
@@ -549,8 +548,8 @@ def check_overlap(cluster_in, saved_darts):
         for overlapping_dart in range(1, len(saved_darts) + 1):
 
             saved_dart_i = saved_darts[f"d{overlapping_dart}"]["cluster"]
-            if has_overlap(cluster_in, saved_dart_i):
-                overlap_points_single = overlap(cluster_in, saved_dart_i)
+            overlap_points_single = overlap(cluster_in, saved_dart_i)
+            if len(overlap_points_single) >= thresh_overlapping_points:
                 overlap_points.append(overlap_points_single)
                 LOGGER.info(
                     f"Current dart {len(saved_darts) + 1} is overlapping"
@@ -700,6 +699,11 @@ class SingleCamLocalize:
         self.distance_to_bottom = 1  # for dart not yet arrived
         self.thresh_n_pixels_dart = 2  # nr of pixels needed to be a cluster
         self.dart_removed_tolerance = 1
+        self.thresh_n_pixels_dart_cluster = 1
+        self.thresh_binarise_cluster = 0.3
+        self.dbscan_eps_cluster = 1
+        self.dbscan_min_samples_cluster = 2
+        self.thresh_noise = 0.1
         self.dart_moved_difference_thresh = 1
 
     def new_image(self, img):
@@ -717,6 +721,7 @@ class SingleCamLocalize:
         Returns:
             The result of the `analyse_imgs` method if the image count is 2 or more, otherwise None.
         """
+        img = filter_noise(img, self.thresh_noise)
         self.imgs.append(img)
         self.image_count += 1
         self.current_img = img
@@ -740,7 +745,11 @@ class SingleCamLocalize:
 
         diff_img = compare_imgs(imgs[-(self.distance + 1)], self.current_img)
         clusters_in, clusters_out = try_get_clusters_in_out(
-            diff_img, thresh_n_pixels_dart=self.thresh_n_pixels_dart
+            diff_img,
+            thresh_binarise=self.thresh_binarise_cluster,
+            thresh_n_pixels_dart=self.thresh_n_pixels_dart_cluster,
+            dbscan_eps=self.dbscan_eps_cluster,
+            dbscan_min_samples=self.dbscan_min_samples_cluster,
         )
         cluster_in, cluster_out = check_nr_of_clusters(clusters_in, clusters_out)
 
@@ -853,7 +862,7 @@ class SingleCamLocalize:
 
             return None
         else:
-            return self.incoming_cluster_detected(cluster_in)
+            return self.incoming_cluster_detected(diff_img, cluster_in)
 
     def visualize_stream(self, ax=None):
         """
@@ -876,14 +885,30 @@ class SingleCamLocalize:
         ax.clear()
         ax.imshow(self.current_img, cmap="gray")
 
-        colors = ["", "red", "blue", "green", "purple", "yellow"]
+        colors = [
+            "",
+            "red",
+            "blue",
+            "green",
+            "yellow",
+            "purple",
+            "brown",
+            "orange",
+            "pink",
+        ]
         for dart, dart_dict in self.saved_darts.items():
             cluster_in = dart_dict["cluster"]
             diff_img = dart_dict["img_pre"]
             angle = dart_dict["angle"]
             pos = dart_dict["pos"]
 
-            ax.scatter(cluster_in[:, 1], cluster_in[:, 0], c=colors[int(dart[-1])])
+            ax.scatter(
+                cluster_in[:, 1],
+                cluster_in[:, 0],
+                c=colors[int(dart[-1])],
+                s=0.8,
+                alpha=0.1,
+            )
             y = np.arange(0, np.shape(diff_img)[0])
             x = (
                 np.tan(np.radians(angle * -1)) * y
@@ -894,8 +919,8 @@ class SingleCamLocalize:
                 x,
                 y,
                 color=colors[int(dart[-1])],
-                linewidth=5,
-                alpha=0.8,
+                linewidth=2,
+                alpha=1,
                 label=dart,
             )
         ax.legend()
