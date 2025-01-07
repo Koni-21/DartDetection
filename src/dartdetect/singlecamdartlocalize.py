@@ -298,22 +298,28 @@ def check_nr_of_clusters(clusters_in, clusters_out):
 
     if nr_clusters_in == 0 and nr_clusters_out == 0:
         return ([], [])
+    elif nr_clusters_out == 0:
+        cluster_in_combined = np.vstack(clusters_in)
+        cluster_out_combined = []
+    elif nr_clusters_in == 0:
+        cluster_in_combined = []
+        cluster_out_combined = np.vstack(clusters_out)
+    else:
+        cluster_in_combined = np.vstack(clusters_in)
+        cluster_out_combined = np.vstack(clusters_out)
+
     if nr_clusters_in > 1:
         LOGGER.warning(
             f"More than one new 'incoming' cluster found: {nr_clusters_in=}. "
-            f"Using only cluster 0 with size {len(clusters_in[0])}."
+            f"Using the combined cluster with size {len(cluster_in_combined)}."
         )
     if nr_clusters_out > 1:
         LOGGER.warning(
             f"More than one new 'leaving' cluster found: {nr_clusters_out=}. "
-            f"Using only cluster 0 with size {len(clusters_out[0])}."
+            f"Using the combined cluster with size {len(cluster_out_combined)}."
         )
-    if nr_clusters_out == 0:
-        return (clusters_in[0], [])
-    if nr_clusters_in == 0:
-        return ([], clusters_out[0])
 
-    return (clusters_in[0], clusters_out[0])
+    return (cluster_in_combined, cluster_out_combined)
 
 
 def dart_fully_arrived(img_height, cluster_in, distance_to_bottom=1):
@@ -456,6 +462,52 @@ def filter_cluster_by_usable_rows(usable_rows, cluster):
     return cluster
 
 
+def filter_middle_overlap_combined_cluster(
+    middle_occluded_rows, overlap_points, combined_cluster
+):
+    """
+    Filters the combined cluster points symmetrically on each side based ´
+    on the middle occluded rows and overlap points.
+
+    Args:
+        middle_occluded_rows (ndarray): Array of row indices that are occluded
+            in the middle.
+        overlap_points (ndarray): Array of points that overlap with another
+            dart, where each point is represented as [row, col].
+        combined_cluster (ndarray): Array of combined cluster points, where
+            each point is represented as [row, col].
+    Returns:
+        ndarray: Filtered combined cluster points.
+    """
+    combined_cluster = combined_cluster[
+        np.isin(combined_cluster[:, 0], middle_occluded_rows)
+    ]
+    for row in middle_occluded_rows:
+        overlapping_columns = overlap_points[overlap_points[:, 0] == row][:, 1]
+        cluster_columns = combined_cluster[combined_cluster[:, 0] == row][:, 1]
+
+        nr_cols_left = min(overlapping_columns) - min(cluster_columns)
+        nr_cols_right = max(cluster_columns) - max(overlapping_columns)
+
+        if nr_cols_left < nr_cols_right:
+            combined_cluster = combined_cluster[
+                ~(
+                    (combined_cluster[:, 0] == row)
+                    & (combined_cluster[:, 1] <= max(cluster_columns) - nr_cols_left)
+                    & (combined_cluster[:, 1] >= min(cluster_columns) + nr_cols_left)
+                )
+            ]
+        else:
+            combined_cluster = combined_cluster[
+                ~(
+                    (combined_cluster[:, 0] == row)
+                    & (combined_cluster[:, 1] >= min(cluster_columns) + nr_cols_right)
+                    & (combined_cluster[:, 1] <= max(cluster_columns) - nr_cols_right)
+                )
+            ]
+    return combined_cluster
+
+
 def calculate_position_from_cluster_and_image(img, cluster):
     """
     Calculate the position, angle, support, and correlation coefficient
@@ -514,7 +566,7 @@ def occlusion_kind(occluded_rows, thresh_needed_rows=2):
         LOGGER.info(
             f"Only the center of the dart is occluded: {len(middle_overlap_rows)=}, {middle_overlap_rows=}"
         )
-        raise NotImplementedError("not yet implemented")
+        return "middle_occluded"
     else:
         LOGGER.info(
             f"One side of the dart is fully occluded: {left_side_overlap=}, {right_side_overlap=}"
@@ -597,6 +649,12 @@ def calculate_position_from_occluded_dart(
     if occlusion_dict.get("occlusion_kind", None) == "fully_useable":
         cluster_in = filter_cluster_by_usable_rows(
             occlusion_dict["fully_usable_rows"], cluster_in
+        )
+    elif occlusion_dict.get("occlusion_kind", None) == "middle_occluded":
+        cluster_in = filter_middle_overlap_combined_cluster(
+            occlusion_dict["middle_occluded_rows"],
+            occlusion_dict["overlap_points"],
+            cluster_in,
         )
 
     pos, angle, support, r = calculate_position_from_cluster_and_image(

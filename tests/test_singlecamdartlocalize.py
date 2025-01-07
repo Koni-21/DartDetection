@@ -17,6 +17,7 @@ from dartdetect.singlecamdartlocalize import (
     overlap,
     differentiate_overlap,
     filter_cluster_by_usable_rows,
+    filter_middle_overlap_combined_cluster,
     calculate_position_from_cluster_and_image,
     occlusion_kind,
     check_overlap,
@@ -450,59 +451,87 @@ class TestFilterClusterByUsableRows(unittest.TestCase):
         )
 
 
+class TestFilterMiddleOverlapCombinedCluster(unittest.TestCase):
+
+    def test_filter_middle_overlap_combined_cluster_standard(self):
+        middle_occluded_rows = [0, 1]
+        overlap_points = np.array([[0, 2], [1, 2]])
+        combined_cluster = np.array([[0, 1], [0, 2], [0, 3], [1, 1], [1, 2], [1, 3]])
+        expected_output = np.array([[0, 1], [0, 3], [1, 1], [1, 3]])
+        result = filter_middle_overlap_combined_cluster(
+            middle_occluded_rows, overlap_points, combined_cluster
+        )
+        np.testing.assert_array_equal(result, expected_output)
+
+    def test_filter_middle_overlap_combined_cluster_cutoff_not_symetric_part(self):
+        middle_occluded_rows = [0, 1]
+        overlap_points = np.array([[0, 2], [1, 2]])
+        combined_cluster = np.array(
+            [[0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [1, 1], [1, 2], [1, 3]]
+        )
+        expected_output = np.array([[0, 1], [0, 5], [1, 1], [1, 3]])
+        result = filter_middle_overlap_combined_cluster(
+            middle_occluded_rows, overlap_points, combined_cluster
+        )
+        np.testing.assert_array_equal(result, expected_output)
+
+
 class TestCheckNrOfClusters(unittest.TestCase):
     def test_check_nr_of_clusters_no_clusters(self):
         clusters_in = []
         clusters_out = []
         expected_output = ([], [])
-        self.assertEqual(
-            check_nr_of_clusters(clusters_in, clusters_out), expected_output
-        )
+        result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+        np.testing.assert_array_equal(result_in, expected_output[0])
+        np.testing.assert_array_equal(result_out, expected_output[1])
 
     def test_check_nr_of_clusters_single_incoming_cluster(self):
         clusters_in = [np.array([[0, 0], [1, 1]])]
         clusters_out = []
-        expected_output = (clusters_in[0], [])
-        self.assertEqual(
-            check_nr_of_clusters(clusters_in, clusters_out), expected_output
-        )
+        expected_output = (np.array([[0, 0], [1, 1]]), [])
+        result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+        np.testing.assert_array_equal(result_in, expected_output[0])
+        np.testing.assert_array_equal(result_out, expected_output[1])
 
     def test_check_nr_of_clusters_single_outgoing_cluster(self):
         clusters_in = []
         clusters_out = [np.array([[0, 0], [1, 1]])]
-        expected_output = ([], clusters_out[0])
-        self.assertEqual(
-            check_nr_of_clusters(clusters_in, clusters_out), expected_output
-        )
+        expected_output = ([], np.array([[0, 0], [1, 1]]))
+        result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+        np.testing.assert_array_equal(result_in, expected_output[0])
+        np.testing.assert_array_equal(result_out, expected_output[1])
 
     def test_check_nr_of_clusters_multiple_incoming_clusters(self):
         clusters_in = [np.array([[0, 0], [1, 1]]), np.array([[2, 2], [3, 3]])]
         clusters_out = []
-        expected_output = (clusters_in[0], [])
+        expected_output = (np.array([[0, 0], [1, 1], [2, 2], [3, 3]]), [])
         with self.assertLogs(LOGGER, level="WARNING") as log:
-            self.assertEqual(
-                check_nr_of_clusters(clusters_in, clusters_out), expected_output
-            )
+            result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+            np.testing.assert_array_equal(result_in, expected_output[0])
+            np.testing.assert_array_equal(result_out, expected_output[1])
             self.assertIn("More than one new 'incoming' cluster found", log.output[0])
 
     def test_check_nr_of_clusters_multiple_outgoing_clusters(self):
         clusters_in = []
         clusters_out = [np.array([[0, 0], [1, 1]]), np.array([[2, 2], [3, 3]])]
-        expected_output = ([], clusters_out[0])
+        expected_output = ([], np.array([[0, 0], [1, 1], [2, 2], [3, 3]]))
         with self.assertLogs(LOGGER, level="WARNING") as log:
-            self.assertEqual(
-                check_nr_of_clusters(clusters_in, clusters_out), expected_output
-            )
+            result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+            np.testing.assert_array_equal(result_in, expected_output[0])
+            np.testing.assert_array_equal(result_out, expected_output[1])
             self.assertIn("More than one new 'leaving' cluster found", log.output[0])
 
     def test_check_nr_of_clusters_multiple_incoming_and_outgoing_clusters(self):
         clusters_in = [np.array([[0, 0], [1, 1]]), np.array([[2, 2], [3, 3]])]
         clusters_out = [np.array([[4, 4], [5, 5]]), np.array([[6, 6], [7, 7]])]
-        expected_output = (clusters_in[0], clusters_out[0])
+        expected_output = (
+            np.array([[0, 0], [1, 1], [2, 2], [3, 3]]),
+            np.array([[4, 4], [5, 5], [6, 6], [7, 7]]),
+        )
         with self.assertLogs(LOGGER, level="WARNING") as log:
-            self.assertEqual(
-                check_nr_of_clusters(clusters_in, clusters_out), expected_output
-            )
+            result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+            np.testing.assert_array_equal(result_in, expected_output[0])
+            np.testing.assert_array_equal(result_out, expected_output[1])
             self.assertIn("More than one new 'incoming' cluster found", log.output[0])
             self.assertIn("More than one new 'leaving' cluster found", log.output[1])
 
@@ -647,8 +676,10 @@ class TestOcclusionKind(unittest.TestCase):
             "left_side_overlap": 0,
             "right_side_overlap": 0,
         }
-        with self.assertRaises(NotImplementedError):
-            occlusion_kind(occluded_rows, thresh_needed_rows=2)
+        self.assertEqual(
+            occlusion_kind(occluded_rows, thresh_needed_rows=2),
+            "middle_occluded",
+        )
 
     def test_occlusion_kind_one_side_fully_occluded(self):
         occluded_rows = {
