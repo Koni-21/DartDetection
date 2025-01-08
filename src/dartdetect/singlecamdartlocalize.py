@@ -186,6 +186,37 @@ def find_clusters(
     return clustered_dartsegments_coords
 
 
+def dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px=1):
+    """
+    Dilates the given cluster mask with new columns by a specified number
+    of pixels.
+
+    Args:
+        cluster_mask (numpy.ndarray): A 2D array where each row represents
+            a coordinate (row, col) of the cluster.
+        img_width (int): The width of the image.
+        dilate_cluster_by_n_px (int, optional): The number of pixels to
+            dilate the cluster by. Default is 1.
+
+    Returns:
+        numpy.ndarray: The dilated cluster mask.
+    """
+    rows, cols = cluster_mask[:, 0], cluster_mask[:, 1]
+    for dilate in range(1, dilate_cluster_by_n_px + 1):
+        new_cols_left = cols - dilate
+        new_cols_right = cols + dilate
+        valid_left = new_cols_left >= 0
+        valid_right = new_cols_right < img_width
+        cluster_mask = np.vstack(
+            [
+                cluster_mask,
+                np.column_stack([rows[valid_left], new_cols_left[valid_left]]),
+                np.column_stack([rows[valid_right], new_cols_right[valid_right]]),
+            ]
+        )
+    return cluster_mask[np.lexsort((cluster_mask[:, 1], cluster_mask[:, 0]))]
+
+
 def try_get_clusters_in_out(
     diff_img,
     thresh_binarise=0.1,
@@ -278,14 +309,21 @@ def lin_regression_on_cluster(img, cluster):
     return (pos, w0, w1, x, y)
 
 
-def check_nr_of_clusters(clusters_in, clusters_out):
+def check_comb_dilate_nr_of_clusters(
+    clusters_in, clusters_out, img_width=0, dilate_cluster_by_n_px=0
+):
     """
-    Checks the number of clusters in the incoming and outgoing lists and
-    returns the appropriate clusters.
+    Checks the number of clusters in the incoming and outgoing lists,
+    dilate the single clusters and cobines multiple clusters, if necessary
+    and returns the modified appropriate clusters.
 
     Args:
         clusters_in (list): A list of incoming clusters.
         clusters_out (list): A list of outgoing clusters.
+        img_width (int): Width of the image. Only needed for dilation. Defaults to 0.
+        dilate_cluster_by_n_px (int): number of pixels to extent each row of
+            the cluster on each side. Defaults to 0.
+
     Returns:
         tuple: A tuple containing the selected incoming cluster and
             outgoing cluster. If there are no clusters in either list,
@@ -298,28 +336,37 @@ def check_nr_of_clusters(clusters_in, clusters_out):
 
     if nr_clusters_in == 0 and nr_clusters_out == 0:
         return ([], [])
-    elif nr_clusters_out == 0:
-        cluster_in_combined = np.vstack(clusters_in)
-        cluster_out_combined = []
-    elif nr_clusters_in == 0:
-        cluster_in_combined = []
-        cluster_out_combined = np.vstack(clusters_out)
-    else:
-        cluster_in_combined = np.vstack(clusters_in)
-        cluster_out_combined = np.vstack(clusters_out)
 
     if nr_clusters_in > 1:
+        if dilate_cluster_by_n_px > 0:
+            clusters_in = [
+                dilate_cluster(cluster, img_width, dilate_cluster_by_n_px)
+                for cluster in clusters_in
+            ]
+        cluster_in = np.vstack(clusters_in)
         LOGGER.warning(
             f"More than one new 'incoming' cluster found: {nr_clusters_in=}. "
-            f"Using the combined cluster with size {len(cluster_in_combined)}."
+            f"Using the combined cluster with size {len(cluster_in)}."
         )
+    elif nr_clusters_in == 1:
+        cluster_in = clusters_in[0]
+        if dilate_cluster_by_n_px > 0:
+            cluster_in = dilate_cluster(cluster_in, img_width, dilate_cluster_by_n_px)
+    elif nr_clusters_in == 0:
+        cluster_in = []
+
     if nr_clusters_out > 1:
+        cluster_out = np.vstack(clusters_out)
         LOGGER.warning(
             f"More than one new 'leaving' cluster found: {nr_clusters_out=}. "
-            f"Using the combined cluster with size {len(cluster_out_combined)}."
+            f"Using the combined cluster with size {len(cluster_out)}."
         )
+    elif nr_clusters_out == 1:
+        cluster_out = clusters_out[0]
+    elif nr_clusters_out == 0:
+        cluster_out = []
 
-    return (cluster_in_combined, cluster_out_combined)
+    return (cluster_in, cluster_out)
 
 
 def dart_fully_arrived(img_height, cluster_in, distance_to_bottom=1):
@@ -463,7 +510,7 @@ def filter_cluster_by_usable_rows(usable_rows, cluster):
 
 
 def filter_middle_overlap_combined_cluster(
-    middle_occluded_rows, overlap_points, combined_cluster
+    middle_occluded_rows, overlap_points, combined_cluster, min_cols=1
 ):
     """
     Filters the combined cluster points symmetrically on each side based ´
@@ -476,6 +523,8 @@ def filter_middle_overlap_combined_cluster(
             dart, where each point is represented as [row, col].
         combined_cluster (ndarray): Array of combined cluster points, where
             each point is represented as [row, col].
+        min_cols (int): Minimum number of columns needed to us the row .
+
     Returns:
         ndarray: Filtered combined cluster points.
     """
@@ -491,6 +540,9 @@ def filter_middle_overlap_combined_cluster(
 
         if nr_cols_left < nr_cols_right:
             combined_cluster = combined_cluster[
+                ~((combined_cluster[:, 0] == row) & (nr_cols_left < min_cols))
+            ]
+            combined_cluster = combined_cluster[
                 ~(
                     (combined_cluster[:, 0] == row)
                     & (combined_cluster[:, 1] <= max(cluster_columns) - nr_cols_left)
@@ -498,6 +550,9 @@ def filter_middle_overlap_combined_cluster(
                 )
             ]
         else:
+            combined_cluster = combined_cluster[
+                ~((combined_cluster[:, 0] == row) & (nr_cols_right < min_cols))
+            ]
             combined_cluster = combined_cluster[
                 ~(
                     (combined_cluster[:, 0] == row)
@@ -622,7 +677,12 @@ def check_overlap(cluster_in, saved_darts, thresh_overlapping_points=1):
 
 
 def calculate_position_from_occluded_dart(
-    occlusion_dict, cluster_in, diff_img, current_img, saved_darts
+    occlusion_dict,
+    cluster_in,
+    diff_img,
+    current_img,
+    saved_darts,
+    min_usable_columns_middle_overlap=1,
 ):
     """
     Calculate the position of a dart from occluded dart data.
@@ -655,6 +715,7 @@ def calculate_position_from_occluded_dart(
             occlusion_dict["middle_occluded_rows"],
             occlusion_dict["overlap_points"],
             cluster_in,
+            min_cols=min_usable_columns_middle_overlap,
         )
 
     pos, angle, support, r = calculate_position_from_cluster_and_image(
@@ -681,7 +742,7 @@ def calculate_position_from_occluded_dart(
         support = min(support, support_2)
         error = abs(pos - pos_2) / 2
 
-    return (pos, angle, support, r, error)
+    return (pos, angle, support, r, error, cluster_in)
 
 
 def single_dart_removed(diff_img, cluster_out, saved_darts, tolerance_px=1):
@@ -754,15 +815,21 @@ class SingleCamLocalize:
         self.dart = 0
 
         # parameters of the subfunctions
-        self.distance_to_bottom = 1  # for dart not yet arrived
-        self.thresh_n_pixels_dart = 2  # nr of pixels needed to be a cluster
+        self.distance_to_bottom_not_arrived = 1  # for dart not yet arrived
         self.dart_removed_tolerance = 1
-        self.thresh_n_pixels_dart_cluster = 1
+        self.thresh_n_pixels_dart_cluster = 2  # nr of pixels needed to be a cluster
         self.thresh_binarise_cluster = 0.3
         self.dbscan_eps_cluster = 1
         self.dbscan_min_samples_cluster = 2
         self.thresh_noise = 0.1
         self.dart_moved_difference_thresh = 1
+
+        self.dilate_cluster_by_n_px = 1
+
+        # self.min_usable_columns_middle_overlap must be higher than
+        # dilate_cluster_by_n_px to avoid devision by 0 in lin regression
+        # for rows with only two zero values
+        self.min_usable_columns_middle_overlap = 2
 
     def new_image(self, img):
         """
@@ -809,7 +876,12 @@ class SingleCamLocalize:
             dbscan_eps=self.dbscan_eps_cluster,
             dbscan_min_samples=self.dbscan_min_samples_cluster,
         )
-        cluster_in, cluster_out = check_nr_of_clusters(clusters_in, clusters_out)
+        cluster_in, cluster_out = check_comb_dilate_nr_of_clusters(
+            clusters_in,
+            clusters_out,
+            img_width=np.shape(diff_img)[1],
+            dilate_cluster_by_n_px=self.dilate_cluster_by_n_px,
+        )
 
         if len(cluster_in) > 0 and len(cluster_out) > 0:
             return self.incoming_and_leaving_cluster_detected(
@@ -841,18 +913,21 @@ class SingleCamLocalize:
         """
         if (
             dart_fully_arrived(
-                np.shape(diff_img)[0], cluster_in, self.distance_to_bottom
+                np.shape(diff_img)[0], cluster_in, self.distance_to_bottom_not_arrived
             )
             or self.distance == 2
         ):
             occlusion_dict = check_overlap(cluster_in, self.saved_darts)
             if len(occlusion_dict) > 0:
-                pos, angle, support, r, error = calculate_position_from_occluded_dart(
-                    occlusion_dict,
-                    cluster_in,
-                    diff_img,
-                    self.current_img,
-                    self.saved_darts,
+                pos, angle, support, r, error, cluster_in = (
+                    calculate_position_from_occluded_dart(
+                        occlusion_dict,
+                        cluster_in,
+                        diff_img,
+                        self.current_img,
+                        self.saved_darts,
+                        self.min_usable_columns_middle_overlap,
+                    )
                 )
             else:
                 pos, angle, support, r = calculate_position_from_cluster_and_image(
@@ -870,7 +945,7 @@ class SingleCamLocalize:
                 "support": support,
                 "error": error,
                 "cluster": cluster_in,
-                "img_pre": self.imgs[-self.distance],
+                "img_pre": self.imgs[-self.distance - 1],
             }
 
             return self.saved_darts[f"d{self.dart}"]
@@ -922,6 +997,11 @@ class SingleCamLocalize:
         else:
             return self.incoming_cluster_detected(diff_img, cluster_in)
 
+    def get_current_dart_values(self):
+        dart_dict = self.saved_darts[f"d{self.dart}"]
+        relevant_outputs = ["pos", "angle", "r", "support", "error"]
+        return {key: dart_dict[key] for key in relevant_outputs}
+
     def visualize_stream(self, ax=None):
         """
         Visualizes the current image stream with detected darts.
@@ -953,6 +1033,7 @@ class SingleCamLocalize:
             "brown",
             "orange",
             "pink",
+            "olive",
         ]
         for dart, dart_dict in self.saved_darts.items():
             cluster_in = dart_dict["cluster"]
@@ -965,7 +1046,8 @@ class SingleCamLocalize:
                 cluster_in[:, 0],
                 c=colors[int(dart[-1])],
                 s=0.8,
-                alpha=0.1,
+                alpha=0.4,
+                label=dart,
             )
             y = np.arange(0, np.shape(diff_img)[0])
             x = (
@@ -976,10 +1058,10 @@ class SingleCamLocalize:
             ax.plot(
                 x,
                 y,
-                color=colors[int(dart[-1])],
-                linewidth=2,
-                alpha=1,
-                label=dart,
+                color="cyan",
+                linestyle="-",
+                linewidth=1,
+                alpha=0.8,
             )
         ax.legend()
 

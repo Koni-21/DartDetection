@@ -10,7 +10,7 @@ from dartdetect.singlecamdartlocalize import (
     get_roi_coords,
     find_clusters,
     try_get_clusters_in_out,
-    check_nr_of_clusters,
+    check_comb_dilate_nr_of_clusters,
     lin_regression_on_cluster,
     dart_fully_arrived,
     dart_moved,
@@ -23,6 +23,7 @@ from dartdetect.singlecamdartlocalize import (
     check_overlap,
     calculate_position_from_occluded_dart,
     single_dart_removed,
+    dilate_cluster,
     SingleCamLocalize,
 )
 
@@ -475,53 +476,77 @@ class TestFilterMiddleOverlapCombinedCluster(unittest.TestCase):
         )
         np.testing.assert_array_equal(result, expected_output)
 
+    def test_filter_middle_overlap_combined_cluster_min_cols(self):
+        middle_occluded_rows = [0, 1]
+        overlap_points = np.array([[0, 2], [1, 2]])
+        combined_cluster = np.array(
+            [[0, 0], [0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [1, 1], [1, 2], [1, 3]]
+        )
+        expected_output = np.array([[0, 0], [0, 1], [0, 4], [0, 5]])
+        result = filter_middle_overlap_combined_cluster(
+            middle_occluded_rows, overlap_points, combined_cluster, min_cols=2
+        )
+        np.testing.assert_array_equal(result, expected_output)
 
-class TestCheckNrOfClusters(unittest.TestCase):
-    def test_check_nr_of_clusters_no_clusters(self):
+
+class TestCheckCombDilateNrOfClusters(unittest.TestCase):
+    def test_check_comb_dilate_nr_of_clusters_no_clusters(self):
         clusters_in = []
         clusters_out = []
         expected_output = ([], [])
-        result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+        result_in, result_out = check_comb_dilate_nr_of_clusters(
+            clusters_in, clusters_out
+        )
         np.testing.assert_array_equal(result_in, expected_output[0])
         np.testing.assert_array_equal(result_out, expected_output[1])
 
-    def test_check_nr_of_clusters_single_incoming_cluster(self):
+    def test_check_comb_dilate_nr_of_clusters_single_incoming_cluster(self):
         clusters_in = [np.array([[0, 0], [1, 1]])]
         clusters_out = []
         expected_output = (np.array([[0, 0], [1, 1]]), [])
-        result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+        result_in, result_out = check_comb_dilate_nr_of_clusters(
+            clusters_in, clusters_out
+        )
         np.testing.assert_array_equal(result_in, expected_output[0])
         np.testing.assert_array_equal(result_out, expected_output[1])
 
-    def test_check_nr_of_clusters_single_outgoing_cluster(self):
+    def test_check_comb_dilate_nr_of_clusters_single_outgoing_cluster(self):
         clusters_in = []
         clusters_out = [np.array([[0, 0], [1, 1]])]
         expected_output = ([], np.array([[0, 0], [1, 1]]))
-        result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+        result_in, result_out = check_comb_dilate_nr_of_clusters(
+            clusters_in, clusters_out
+        )
         np.testing.assert_array_equal(result_in, expected_output[0])
         np.testing.assert_array_equal(result_out, expected_output[1])
 
-    def test_check_nr_of_clusters_multiple_incoming_clusters(self):
+    def test_check_comb_dilate_nr_of_clusters_multiple_incoming_clusters(self):
         clusters_in = [np.array([[0, 0], [1, 1]]), np.array([[2, 2], [3, 3]])]
         clusters_out = []
         expected_output = (np.array([[0, 0], [1, 1], [2, 2], [3, 3]]), [])
         with self.assertLogs(LOGGER, level="WARNING") as log:
-            result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+            result_in, result_out = check_comb_dilate_nr_of_clusters(
+                clusters_in, clusters_out
+            )
             np.testing.assert_array_equal(result_in, expected_output[0])
             np.testing.assert_array_equal(result_out, expected_output[1])
             self.assertIn("More than one new 'incoming' cluster found", log.output[0])
 
-    def test_check_nr_of_clusters_multiple_outgoing_clusters(self):
+    def test_check_comb_dilate_nr_of_clusters_multiple_outgoing_clusters(self):
         clusters_in = []
         clusters_out = [np.array([[0, 0], [1, 1]]), np.array([[2, 2], [3, 3]])]
         expected_output = ([], np.array([[0, 0], [1, 1], [2, 2], [3, 3]]))
         with self.assertLogs(LOGGER, level="WARNING") as log:
-            result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+            result_in, result_out = check_comb_dilate_nr_of_clusters(
+                clusters_in, clusters_out
+            )
             np.testing.assert_array_equal(result_in, expected_output[0])
             np.testing.assert_array_equal(result_out, expected_output[1])
             self.assertIn("More than one new 'leaving' cluster found", log.output[0])
 
-    def test_check_nr_of_clusters_multiple_incoming_and_outgoing_clusters(self):
+    def test_check_comb_dilate_nr_of_clusters_multiple_incoming_and_outgoing_clusters(
+        self,
+    ):
         clusters_in = [np.array([[0, 0], [1, 1]]), np.array([[2, 2], [3, 3]])]
         clusters_out = [np.array([[4, 4], [5, 5]]), np.array([[6, 6], [7, 7]])]
         expected_output = (
@@ -529,7 +554,9 @@ class TestCheckNrOfClusters(unittest.TestCase):
             np.array([[4, 4], [5, 5], [6, 6], [7, 7]]),
         )
         with self.assertLogs(LOGGER, level="WARNING") as log:
-            result_in, result_out = check_nr_of_clusters(clusters_in, clusters_out)
+            result_in, result_out = check_comb_dilate_nr_of_clusters(
+                clusters_in, clusters_out
+            )
             np.testing.assert_array_equal(result_in, expected_output[0])
             np.testing.assert_array_equal(result_out, expected_output[1])
             self.assertIn("More than one new 'incoming' cluster found", log.output[0])
@@ -812,7 +839,7 @@ class TestCalculatePositionFromOccludedDart(unittest.TestCase):
         current_img = np.array([[1, 0, 1], [1, 0, 1], [1, 0, 1]])
         saved_darts = {}
 
-        pos, angle, support, r, error = calculate_position_from_occluded_dart(
+        pos, angle, support, r, error, cluster = calculate_position_from_occluded_dart(
             occlusion_dict, cluster_in, diff_img, current_img, saved_darts
         )
 
@@ -841,7 +868,7 @@ class TestCalculatePositionFromOccludedDart(unittest.TestCase):
             }
         }
 
-        pos, angle, support, r, error = calculate_position_from_occluded_dart(
+        pos, angle, support, r, error, cluster = calculate_position_from_occluded_dart(
             occlusion_dict, cluster_in, diff_img, current_img, saved_darts
         )
 
@@ -990,6 +1017,57 @@ class TestSingleCamLocalize(unittest.TestCase):
         fig, ax = plt.subplots()
         self.Loc.visualize_stream(ax)
         self.assertEqual(len(ax.lines), 1)
+
+
+class TestDilateCluster(unittest.TestCase):
+    def test_dilate_cluster_no_dilation(self):
+        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
+        img_width = 5
+        dilate_cluster_by_n_px = 0
+        expected_output = np.array([[0, 1], [1, 1], [2, 1]])
+        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
+        np.testing.assert_array_equal(result, expected_output)
+
+    def test_dilate_cluster_single_pixel_dilation(self):
+        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
+        img_width = 5
+        dilate_cluster_by_n_px = 1
+        expected_output = np.array(
+            [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]]
+        )
+        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
+        np.testing.assert_array_equal(result, expected_output)
+
+    def test_dilate_cluster_multiple_pixel_dilation(self):
+        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
+        img_width = 5
+        dilate_cluster_by_n_px = 2
+        expected_output = np.array(
+            [
+                [0, 0],
+                [0, 1],
+                [0, 2],
+                [0, 3],
+                [1, 0],
+                [1, 1],
+                [1, 2],
+                [1, 3],
+                [2, 0],
+                [2, 1],
+                [2, 2],
+                [2, 3],
+            ]
+        )
+        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
+        np.testing.assert_array_equal(result, expected_output)
+
+    def test_dilate_cluster_boundary_conditions(self):
+        cluster_mask = np.array([[0, 0], [1, 0], [2, 0]])
+        img_width = 3
+        dilate_cluster_by_n_px = 1
+        expected_output = np.array([[0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1]])
+        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
+        np.testing.assert_array_equal(result, expected_output)
 
 
 if __name__ == "__main__":
