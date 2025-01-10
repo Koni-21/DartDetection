@@ -1,3 +1,5 @@
+import os
+
 import logging
 import unittest
 
@@ -5,6 +7,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 
 from dartdetect.singlecamdartlocalize import (
+    draw_dart_subpixel,
     filter_noise,
     compare_imgs,
     get_roi_coords,
@@ -188,7 +191,7 @@ class TestLinRegressionOnCluster(unittest.TestCase):
             ]
         )
         cluster = np.array([[0, 1], [1, 1], [2, 1], [3, 1]])
-        pos, w0, w1, x, y = lin_regression_on_cluster(img, cluster)
+        pos, w0, w1, x, y, error = lin_regression_on_cluster(img, cluster)
         expected_pos = 1
         expected_w0 = 1
         expected_w1 = 0
@@ -211,7 +214,7 @@ class TestLinRegressionOnCluster(unittest.TestCase):
         )
 
         cluster = np.array([[0, 0], [1, 1], [2, 2], [3, 3]])
-        pos, w0, w1, x, y = lin_regression_on_cluster(img, cluster)
+        pos, w0, w1, x, y, error = lin_regression_on_cluster(img, cluster)
         expected_pos = 3.0
         expected_w0 = 0
         expected_w1 = 1.0
@@ -248,7 +251,7 @@ class TestLinRegressionOnCluster(unittest.TestCase):
                 [3, 3],
             ]
         )
-        pos, w0, w1, x, y = lin_regression_on_cluster(img, cluster)
+        pos, w0, w1, x, y, error = lin_regression_on_cluster(img, cluster)
         expected_pos = 2.0
         expected_w0 = 2.0
         expected_w1 = 0.0
@@ -268,7 +271,7 @@ class TestLinRegressionOnCluster(unittest.TestCase):
             ]
         )
         cluster = np.array([[0, 1], [0, 2], [1, 1], [1, 2]])
-        pos, w0, w1, x, y = lin_regression_on_cluster(img, cluster)
+        pos, w0, w1, x, y, error = lin_regression_on_cluster(img, cluster)
         expected_pos = 1.5
         expected_w0 = 1.5
         expected_w1 = 0.0
@@ -288,7 +291,7 @@ class TestLinRegressionOnCluster(unittest.TestCase):
             ]
         )
         cluster = np.array([[0, 1], [0, 2], [1, 1], [1, 2], [1, 3]])
-        pos, w0, w1, x, y = lin_regression_on_cluster(img, cluster)
+        pos, w0, w1, x, y, error = lin_regression_on_cluster(img, cluster)
         expected_pos = 1.9545454545454548
         expected_w0 = 1.4285714285714286
         expected_w1 = 0.5259740259740262
@@ -299,6 +302,56 @@ class TestLinRegressionOnCluster(unittest.TestCase):
         self.assertAlmostEqual(w1, expected_w1, places=2)
         self.assertListEqual(x, expected_x)
         self.assertListEqual(y, expected_y)
+
+    def test_lin_regression_on_cluster_simple_not_weighted(self):
+        img = np.array(
+            [
+                [1, 0, 1, 1, 1],
+                [1, 0, 1, 1, 1],
+                [1, 0, 1, 1, 1],
+                [1, 0, 1, 1, 1],
+            ]
+        )
+        cluster = np.array([[0, 1], [1, 1], [2, 1], [3, 1]])
+        pos, w0, w1, x, y, error = lin_regression_on_cluster(
+            img, cluster, weighted=False
+        )
+        expected_pos = 1
+        expected_w0 = 1
+        expected_w1 = 0
+        expected_x = [0, 1, 2, 3]
+        expected_y = [1, 1, 1, 1]
+        expected_error = 0.5
+        self.assertAlmostEqual(pos, expected_pos, places=2)
+        self.assertAlmostEqual(w0, expected_w0, places=2)
+        self.assertAlmostEqual(w1, expected_w1, places=2)
+        self.assertListEqual(x, expected_x)
+        self.assertListEqual(y, expected_y)
+        self.assertAlmostEqual(error, expected_error)
+
+    def test_lin_regression_on_cluster_subpixel_3_not_weighted(self):
+        img = np.array(
+            [
+                [1, 0.2, 0.4, 1, 1],
+                [1, 0.1, 0.5, 0.2, 1],
+            ]
+        )
+        cluster = np.array([[0, 1], [0, 2], [1, 1], [1, 2], [1, 3]])
+        pos, w0, w1, x, y, error = lin_regression_on_cluster(
+            img, cluster, weighted=False
+        )
+        expected_pos = 2
+        expected_w0 = 1.5
+        expected_w1 = 0.5
+        expected_x = [0, 1]
+        expected_y = [1.5, 2]
+        expected_error = 0.5
+        self.assertAlmostEqual(pos, expected_pos, places=2)
+        self.assertAlmostEqual(w0, expected_w0, places=2)
+        self.assertAlmostEqual(w1, expected_w1, places=2)
+        self.assertListEqual(x, expected_x)
+        self.assertListEqual(y, expected_y)
+        self.assertAlmostEqual(error, expected_error)
 
 
 class TestDartFullyArrived(unittest.TestCase):
@@ -339,6 +392,57 @@ class TestDartMoved(unittest.TestCase):
         cluster_in = np.array([[0, 0]])
         cluster_out = np.array([[0, 2], [0, 3], [0, 4], [1, 2], [1, 3], [1, 4]])
         self.assertFalse(dart_moved(diff_img, cluster_in, cluster_out))
+
+
+class TestDilateCluster(unittest.TestCase):
+    def test_dilate_cluster_no_dilation(self):
+        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
+        img_width = 5
+        dilate_cluster_by_n_px = 0
+        expected_output = np.array([[0, 1], [1, 1], [2, 1]])
+        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
+        np.testing.assert_array_equal(result, expected_output)
+
+    def test_dilate_cluster_single_pixel_dilation(self):
+        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
+        img_width = 5
+        dilate_cluster_by_n_px = 1
+        expected_output = np.array(
+            [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]]
+        )
+        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
+        np.testing.assert_array_equal(result, expected_output)
+
+    def test_dilate_cluster_multiple_pixel_dilation(self):
+        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
+        img_width = 5
+        dilate_cluster_by_n_px = 2
+        expected_output = np.array(
+            [
+                [0, 0],
+                [0, 1],
+                [0, 2],
+                [0, 3],
+                [1, 0],
+                [1, 1],
+                [1, 2],
+                [1, 3],
+                [2, 0],
+                [2, 1],
+                [2, 2],
+                [2, 3],
+            ]
+        )
+        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
+        np.testing.assert_array_equal(result, expected_output)
+
+    def test_dilate_cluster_boundary_conditions(self):
+        cluster_mask = np.array([[0, 0], [1, 0], [2, 0]])
+        img_width = 3
+        dilate_cluster_by_n_px = 1
+        expected_output = np.array([[0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1]])
+        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
+        np.testing.assert_array_equal(result, expected_output)
 
 
 class TestOverlap(unittest.TestCase):
@@ -575,7 +679,7 @@ class TestCalculatePositionFromClusterAndImage(unittest.TestCase):
             ]
         )
         cluster = np.array([[0, 1], [1, 1], [2, 1], [3, 1]])
-        pos, angle_pred, support, r = calculate_position_from_cluster_and_image(
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
             img, cluster
         )
         expected_pos = 1
@@ -595,7 +699,7 @@ class TestCalculatePositionFromClusterAndImage(unittest.TestCase):
             ]
         )
         cluster = np.array([[0, 0], [1, 1], [2, 2], [3, 3]])
-        pos, angle_pred, support, r = calculate_position_from_cluster_and_image(
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
             img, cluster
         )
         expected_pos = 3.0
@@ -632,12 +736,12 @@ class TestCalculatePositionFromClusterAndImage(unittest.TestCase):
                 [3, 3],
             ]
         )
-        pos, angle_pred, support, r = calculate_position_from_cluster_and_image(
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
             img, cluster
         )
         expected_pos = 2.0
         expected_angle_pred = 0.0
-        expected_support = 12
+        expected_support = 4
 
         self.assertAlmostEqual(pos, expected_pos, places=2)
         self.assertAlmostEqual(angle_pred, expected_angle_pred, places=2)
@@ -651,12 +755,12 @@ class TestCalculatePositionFromClusterAndImage(unittest.TestCase):
             ]
         )
         cluster = np.array([[0, 1], [0, 2], [1, 1], [1, 2]])
-        pos, angle_pred, support, r = calculate_position_from_cluster_and_image(
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
             img, cluster
         )
         expected_pos = 1.5
         expected_angle_pred = 0.0
-        expected_support = 4
+        expected_support = 2
 
         self.assertAlmostEqual(pos, expected_pos, places=2)
         self.assertAlmostEqual(angle_pred, expected_angle_pred, places=2)
@@ -670,17 +774,37 @@ class TestCalculatePositionFromClusterAndImage(unittest.TestCase):
             ]
         )
         cluster = np.array([[0, 1], [0, 2], [1, 1], [1, 2], [1, 3]])
-        pos, angle_pred, support, r = calculate_position_from_cluster_and_image(
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
             img, cluster
         )
         expected_pos = 1.9545454545454548
         expected_angle_pred = -27.743204472006298
-        expected_support = 5
+        expected_support = 2
         expected_r = 1.0
         self.assertAlmostEqual(pos, expected_pos, places=2)
         self.assertAlmostEqual(angle_pred, expected_angle_pred, places=2)
         self.assertEqual(support, expected_support)
         self.assertAlmostEqual(r, expected_r, places=2)
+
+    def test_calculate_position_from_cluster_and_image_only_top_rows(self):
+        img = np.array(
+            [
+                [1, 0, 1, 1, 1],
+                [1, 1, 0, 1, 1],
+                [1, 1, 1, 1, 1],
+                [1, 1, 1, 1, 1],
+            ]
+        )
+        cluster = np.array([[0, 1], [1, 2]])
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
+            img, cluster
+        )
+        expected_pos = 4
+        expected_angle_pred = -45
+        expected_support = 2
+        self.assertAlmostEqual(pos, expected_pos, places=2)
+        self.assertAlmostEqual(angle_pred, expected_angle_pred, places=2)
+        self.assertEqual(support, expected_support)
 
 
 class TestOcclusionKind(unittest.TestCase):
@@ -875,7 +999,7 @@ class TestCalculatePositionFromOccludedDart(unittest.TestCase):
         expected_pos = 0.75
         expected_angle = 0
         expected_support = 3
-        expected_error = 0.125
+        expected_error = 0.25
 
         self.assertAlmostEqual(pos, expected_pos, places=2)
         self.assertAlmostEqual(angle, expected_angle, places=2)
@@ -1018,56 +1142,100 @@ class TestSingleCamLocalize(unittest.TestCase):
         self.Loc.visualize_stream(ax)
         self.assertEqual(len(ax.lines), 1)
 
+    def test_only_part_occluded_fully_usable_rows(self):
+        img0 = np.ones([20, 500])
+        img_d1 = draw_dart_subpixel(img0.copy(), 200, 0, 10)
+        img_d2 = draw_dart_subpixel(img_d1.copy(), 215, 20, 15)
 
-class TestDilateCluster(unittest.TestCase):
-    def test_dilate_cluster_no_dilation(self):
-        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
-        img_width = 5
-        dilate_cluster_by_n_px = 0
-        expected_output = np.array([[0, 1], [1, 1], [2, 1]])
-        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
-        np.testing.assert_array_equal(result, expected_output)
+        self.Loc.thresh_binarise_cluster = 0
+        self.Loc.thresh_noise = 0
 
-    def test_dilate_cluster_single_pixel_dilation(self):
-        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
-        img_width = 5
-        dilate_cluster_by_n_px = 1
-        expected_output = np.array(
-            [[0, 0], [0, 1], [0, 2], [1, 0], [1, 1], [1, 2], [2, 0], [2, 1], [2, 2]]
+        self.Loc.new_image(img0)
+        d1 = self.Loc.new_image(img_d1)
+        d2 = self.Loc.new_image(img_d2)
+
+        self.assertAlmostEqual(d1["pos"], 200)
+        self.assertAlmostEqual(d2["pos"], 215.04274345247006)
+        self.assertAlmostEqual(d2["angle"], 19.797940072766973)
+
+    def test_one_side_fully_occluded(self):
+        img0 = np.ones([20, 500])
+        img_d1 = draw_dart_subpixel(img0.copy(), 200, 0, 10)
+        img_d2 = draw_dart_subpixel(img_d1.copy(), 210, 5, 15)
+
+        self.Loc.thresh_binarise_cluster = 0
+        self.Loc.thresh_noise = 0
+
+        self.Loc.new_image(img0)
+        d1 = self.Loc.new_image(img_d1)
+        d2 = self.Loc.new_image(img_d2)
+
+        self.assertAlmostEqual(d1["pos"], 200)
+        self.assertAlmostEqual(d2["pos"], 209.07443785489002)
+        self.assertAlmostEqual(d2["angle"], 2.631871731830313)
+        self.assertAlmostEqual(d2["error"], 2.750036570800802)
+
+    def test_only_middle_occluded(self):
+        img0 = np.ones([20, 500])
+        img_d1 = draw_dart_subpixel(img0.copy(), 200, 0, 10)
+        img_d2 = draw_dart_subpixel(img_d1.copy(), 203.1, 0, 25)
+
+        self.Loc.thresh_binarise_cluster = 0
+        self.Loc.thresh_noise = 0
+        self.Loc.dilate_cluster_by_n_px = 1
+        self.Loc.min_usable_columns_middle_overlap = 1
+
+        self.Loc.new_image(img0)
+        d1 = self.Loc.new_image(img_d1)
+        d2 = self.Loc.new_image(img_d2)
+
+        self.assertAlmostEqual(d1["pos"], 200)
+        self.assertListEqual(
+            [d2["pos"], d2["angle"], d2["error"], d2["support"]],
+            [203.0, -0.0, 0.22360679774997896, 20],
         )
-        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
-        np.testing.assert_array_equal(result, expected_output)
 
-    def test_dilate_cluster_multiple_pixel_dilation(self):
-        cluster_mask = np.array([[0, 1], [1, 1], [2, 1]])
-        img_width = 5
-        dilate_cluster_by_n_px = 2
-        expected_output = np.array(
-            [
-                [0, 0],
-                [0, 1],
-                [0, 2],
-                [0, 3],
-                [1, 0],
-                [1, 1],
-                [1, 2],
-                [1, 3],
-                [2, 0],
-                [2, 1],
-                [2, 2],
-                [2, 3],
-            ]
+
+class TestSingleCamLocalize_real_world_data(unittest.TestCase):
+    def test_images_usb_cam_left(self):
+        folder_path = (
+            r"..\DartDetection\data\test_imgs\250106_usbcam_imgs\imgs_0_to_18\cam_left"
         )
-        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
-        np.testing.assert_array_equal(result, expected_output)
 
-    def test_dilate_cluster_boundary_conditions(self):
-        cluster_mask = np.array([[0, 0], [1, 0], [2, 0]])
-        img_width = 3
-        dilate_cluster_by_n_px = 1
-        expected_output = np.array([[0, 0], [0, 1], [1, 0], [1, 1], [2, 0], [2, 1]])
-        result = dilate_cluster(cluster_mask, img_width, dilate_cluster_by_n_px)
-        np.testing.assert_array_equal(result, expected_output)
+        image_files = sorted([f for f in os.listdir(folder_path)])
+        images = [plt.imread(os.path.join(folder_path, f)) for f in image_files]
+
+        Loc = SingleCamLocalize()
+
+        for img in images:
+            Loc.new_image(img)
+
+        self.assertAlmostEqual(Loc.saved_darts["d1"]["pos"], 486.85104802368437)
+        self.assertAlmostEqual(Loc.saved_darts["d2"]["pos"], 656.658273636061)
+        self.assertAlmostEqual(Loc.saved_darts["d3"]["pos"], 247.517908029376)
+        self.assertAlmostEqual(Loc.saved_darts["d4"]["pos"], 484.52184735096125)
+        self.assertAlmostEqual(Loc.saved_darts["d5"]["pos"], 606.6639115874592)
+        self.assertAlmostEqual(Loc.saved_darts["d6"]["pos"], 580.896894915437)
+
+    def test_images_usb_cam_right(self):
+        folder_path = (
+            r"..\DartDetection\data\test_imgs\250106_usbcam_imgs\imgs_0_to_18\cam_right"
+        )
+
+        image_files = sorted([f for f in os.listdir(folder_path)])
+        images = [plt.imread(os.path.join(folder_path, f)) for f in image_files]
+
+        Loc = SingleCamLocalize()
+
+        for img in images:
+            Loc.new_image(img)
+
+        self.assertAlmostEqual(Loc.saved_darts["d1"]["pos"], 961.1843337382788)
+        self.assertAlmostEqual(Loc.saved_darts["d2"]["pos"], 536.1432648703126)
+        self.assertAlmostEqual(Loc.saved_darts["d3"]["pos"], 650.3970681707274)
+        self.assertAlmostEqual(Loc.saved_darts["d4"]["pos"], 507.66883553411407)
+        self.assertAlmostEqual(Loc.saved_darts["d5"]["pos"], 704.5066846428723)
+        self.assertAlmostEqual(Loc.saved_darts["d6"]["pos"], 952.0735731554055)
 
 
 if __name__ == "__main__":

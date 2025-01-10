@@ -266,7 +266,70 @@ def try_get_clusters_in_out(
     return clusters_in, clusters_out
 
 
-def lin_regression_on_cluster(img, cluster):
+def weighted_average_rows(img, cluster):
+    """
+    Calculate the weighted average column positions for each unique row in the cluster.
+
+    Args:
+        img (np.ndarray): The input image array.
+        cluster (np.ndarray): A 2D array where each row represents a point with
+                              [row_index, col_index].
+    Returns:
+        tuple: A tuple containing:
+            - height_idx (list): List of unique row indices from the cluster.
+            - averaged_row_width_position (list): List of weighted average column positions
+                                                  corresponding to each row index.
+            - error (int): Placeholder for error, currently always returns 0.
+    """
+    row_mean = {}
+    for row in np.unique(cluster[:, 0]):
+        col_idx = cluster[:, 1][cluster[:, 0] == row]
+        row_vals = img[row, col_idx]
+        weighted_vals = 1 - row_vals
+        row_mean[row] = np.sum(weighted_vals * col_idx) / np.sum(weighted_vals)
+
+    height_idx, averaged_row_width_position = list(row_mean.keys()), list(
+        row_mean.values()
+    )
+    error = 0
+
+    return height_idx, averaged_row_width_position, error
+
+
+def average_rows(cluster):
+    """
+    Calculate the average column index for each unique row in the given cluster.
+
+    Args:
+        cluster (numpy.ndarray): A 2D array where each row represents a point with
+                                 the first column as the row index and the second
+                                 column as the column index.
+    Returns:
+        tuple: A tuple containing:
+            - height_idx (list): A list of unique row indices.
+            - averaged_row_width_position (list): A list of average column indices
+                                                  corresponding to each unique row.
+            - error (float): An error estimation value based on the number of unique rows.
+    """
+    row_mean = {}
+    for row in np.unique(cluster[:, 0]):
+        col_idx = cluster[:, 1][cluster[:, 0] == row]
+        row_mean[row] = np.mean(col_idx)
+
+    height_idx, averaged_row_width_position = list(row_mean.keys()), list(
+        row_mean.values()
+    )
+
+    # see error estimation:
+    # G:\My Drive\Dartprojekt\Software\ESP32cam\250110_statistical_error_analysis_unweighted_mean.ipynb
+    error = 1 / np.sqrt(len(np.unique(cluster[:, 0])))
+    if error > 0.5:
+        error = 0.5
+
+    return height_idx, averaged_row_width_position, error
+
+
+def lin_regression_on_cluster(img, cluster, weighted=True):
     """
     Perform linear regression on a cluster of points in an image.
     This function calculates the row-wise mean of the cluster points in the image,
@@ -278,6 +341,9 @@ def lin_regression_on_cluster(img, cluster):
             a point in the cluster, with the first column being the row indices
             and the second column being the column indices of the points in
             the image.
+        weighted (bool): Calculate the regression weighted on image values or
+            only unweighted using only the cluster. Defaults to True.
+
 
     Returns:
         tuple: A tuple containing:
@@ -288,25 +354,28 @@ def lin_regression_on_cluster(img, cluster):
             - w1 (float): The slope of the fitted line.
             - x (list): The list of row indices used for the regression.
             - y (list): The list of mean column indices corresponding to the row indices.
+            - error (float): Estimator of the position discretization error
     """
 
-    row_mean = {}
-    for row in np.unique(cluster[:, 0]):
-        col_idx = cluster[:, 1][cluster[:, 0] == row]
-        row_vals = img[row, col_idx]
-        weighted_vals = 1 - row_vals
-        row_mean[row] = np.sum(weighted_vals * col_idx) / np.sum(weighted_vals)
+    if weighted:
+        height_idx, averaged_row_width_position, pos_discretization_error = (
+            weighted_average_rows(img, cluster)
+        )
+    else:
+        height_idx, averaged_row_width_position, pos_discretization_error = (
+            average_rows(cluster)
+        )
 
-    h, w = list(row_mean.keys()), list(row_mean.values())
     # flip axis to avoid infinit slope
-    x = h
-    y = w
+    x = height_idx
+    y = averaged_row_width_position
 
-    w1 = np.cov(x, y, bias=1)[0][1] / np.var(x)
-    w0 = np.mean(y) - w1 * np.mean(x)
-    pos = w0 + w1 * np.max(h)
+    # https://en.wikipedia.org/wiki/Simple_linear_regression
+    w1 = np.cov(x, y, bias=1)[0][1] / np.var(x)  # m
+    w0 = np.mean(y) - w1 * np.mean(x)  # b
+    pos = w0 + w1 * (np.shape(img)[0] - 1)
 
-    return (pos, w0, w1, x, y)
+    return (pos, w0, w1, x, y, pos_discretization_error)
 
 
 def check_comb_dilate_nr_of_clusters(
@@ -563,7 +632,7 @@ def filter_middle_overlap_combined_cluster(
     return combined_cluster
 
 
-def calculate_position_from_cluster_and_image(img, cluster):
+def calculate_position_from_cluster_and_image(img, cluster, weighted=True):
     """
     Calculate the position, angle, support, and correlation coefficient
     from a given image and cluster.
@@ -571,6 +640,8 @@ def calculate_position_from_cluster_and_image(img, cluster):
     Args:
         img (numpy.ndarray): The image data.
         cluster (list): A list of points representing the cluster.
+        weighted (bool): Calculate the regression weighted on image values or
+            only unweighted using only the cluster. Defaults to True.
 
     Returns:
         tuple: A tuple containing:
@@ -579,13 +650,14 @@ def calculate_position_from_cluster_and_image(img, cluster):
             - support (int): The number of points in the cluster.
             - r (float): The correlation coefficient between x and y
                 coordinates of the cluster points.
+            - error (float): Estimator of the position discretization error
     """
-    pos, b, m, x, y = lin_regression_on_cluster(img, cluster)
+    pos, b, m, x, y, error = lin_regression_on_cluster(img, cluster, weighted=weighted)
     angle_pred = np.degrees(np.arctan(-1 * m))
     with np.errstate(divide="ignore", invalid="ignore"):
         r = np.corrcoef(x, y)[0][1]
-    support = len(cluster)
-    return pos, angle_pred, support, r
+    support = len(np.unique(cluster[:, 0]))
+    return pos, angle_pred, support, r, error
 
 
 def occlusion_kind(occluded_rows, thresh_needed_rows=2):
@@ -706,6 +778,7 @@ def calculate_position_from_occluded_dart(
             - r (float): Pearson correlation of the averaged rows.
             - error (float): Error value between combined dart positions.
     """
+    weighted = True
     if occlusion_dict.get("occlusion_kind", None) == "fully_useable":
         cluster_in = filter_cluster_by_usable_rows(
             occlusion_dict["fully_usable_rows"], cluster_in
@@ -717,11 +790,11 @@ def calculate_position_from_occluded_dart(
             cluster_in,
             min_cols=min_usable_columns_middle_overlap,
         )
+        weighted = False
 
-    pos, angle, support, r = calculate_position_from_cluster_and_image(
-        diff_img, cluster_in
+    pos, angle, support, r, error = calculate_position_from_cluster_and_image(
+        diff_img, cluster_in, weighted=weighted
     )
-    error = 0
 
     if occlusion_dict.get("occlusion_kind", None) == "one_side_fully_occluded":
         overlapping_dart = np.min(occlusion_dict["overlapping_darts"])
@@ -733,14 +806,16 @@ def calculate_position_from_occluded_dart(
             current_img,
         )
 
-        pos_2, angle_2, support_2, r_2 = calculate_position_from_cluster_and_image(
-            diff_img_dx, cluster_combined
+        pos_2, angle_2, support_2, r_2, error = (
+            calculate_position_from_cluster_and_image(diff_img_dx, cluster_combined)
         )
         pos = (pos + pos_2) / 2
         angle = (angle + angle_2) / 2
         r = (r + r_2) / 2
         support = min(support, support_2)
-        error = abs(pos - pos_2) / 2
+        error_pos = abs(pos - pos_2)
+        if error_pos > error:
+            error = error_pos
 
     return (pos, angle, support, r, error, cluster_in)
 
@@ -758,7 +833,7 @@ def single_dart_removed(diff_img, cluster_out, saved_darts, tolerance_px=1):
     Returns:
         int or None: The number of the removed dart if detected, otherwise None.
     """
-    pos, angle, support, r = calculate_position_from_cluster_and_image(
+    pos, angle, support, r, error = calculate_position_from_cluster_and_image(
         np.abs(diff_img - 2), cluster_out
     )
     LOGGER.info(f"Dart left: {pos=:.4f}, {angle=:.4f}, {support=}, {r=:.4f}")
@@ -809,6 +884,7 @@ class SingleCamLocalize:
         self.image_count = 0
         self.imgs = []
         self.current_img = None
+        self.current_diff_img = None
 
         self.saved_darts = {}
         self.distance = 1
@@ -826,10 +902,7 @@ class SingleCamLocalize:
 
         self.dilate_cluster_by_n_px = 1
 
-        # self.min_usable_columns_middle_overlap must be higher than
-        # dilate_cluster_by_n_px to avoid devision by 0 in lin regression
-        # for rows with only two zero values
-        self.min_usable_columns_middle_overlap = 2
+        self.min_usable_columns_middle_overlap = 1
 
     def new_image(self, img):
         """
@@ -869,6 +942,7 @@ class SingleCamLocalize:
         imgs = self.imgs
 
         diff_img = compare_imgs(imgs[-(self.distance + 1)], self.current_img)
+        self.current_diff_img = diff_img
         clusters_in, clusters_out = try_get_clusters_in_out(
             diff_img,
             thresh_binarise=self.thresh_binarise_cluster,
@@ -917,9 +991,10 @@ class SingleCamLocalize:
             )
             or self.distance == 2
         ):
+            cluster_mod = cluster_in
             occlusion_dict = check_overlap(cluster_in, self.saved_darts)
             if len(occlusion_dict) > 0:
-                pos, angle, support, r, error, cluster_in = (
+                pos, angle, support, r, error, cluster_mod = (
                     calculate_position_from_occluded_dart(
                         occlusion_dict,
                         cluster_in,
@@ -930,10 +1005,9 @@ class SingleCamLocalize:
                     )
                 )
             else:
-                pos, angle, support, r = calculate_position_from_cluster_and_image(
-                    diff_img, cluster_in
+                pos, angle, support, r, error = (
+                    calculate_position_from_cluster_and_image(diff_img, cluster_in)
                 )
-                error = 0
 
             self.distance = 1
             self.dart += 1
@@ -945,6 +1019,7 @@ class SingleCamLocalize:
                 "support": support,
                 "error": error,
                 "cluster": cluster_in,
+                "cluster_mod": cluster_mod,
                 "img_pre": self.imgs[-self.distance - 1],
             }
 
@@ -998,6 +1073,18 @@ class SingleCamLocalize:
             return self.incoming_cluster_detected(diff_img, cluster_in)
 
     def get_current_dart_values(self):
+        """
+        Retrieves the current dart values from the saved darts dictionary.
+
+        This method returns a dictionary containing only the relevant outputs
+        for the current dart, which include position, angle, radius, support,
+        and error.
+
+        Returns:
+            dict: A dictionary with keys "pos", "angle", "r", "support", and "error",
+                  containing the corresponding values for the current dart.
+        """
+
         dart_dict = self.saved_darts[f"d{self.dart}"]
         relevant_outputs = ["pos", "angle", "r", "support", "error"]
         return {key: dart_dict[key] for key in relevant_outputs}
@@ -1037,6 +1124,7 @@ class SingleCamLocalize:
         ]
         for dart, dart_dict in self.saved_darts.items():
             cluster_in = dart_dict["cluster"]
+            cluster_mod = dart_dict["cluster_mod"]
             diff_img = dart_dict["img_pre"]
             angle = dart_dict["angle"]
             pos = dart_dict["pos"]
@@ -1045,9 +1133,19 @@ class SingleCamLocalize:
                 cluster_in[:, 1],
                 cluster_in[:, 0],
                 c=colors[int(dart[-1])],
-                s=0.8,
+                s=2,
+                marker="x",
                 alpha=0.4,
                 label=dart,
+            )
+
+            ax.scatter(
+                cluster_mod[:, 1],
+                cluster_mod[:, 0],
+                c=colors[int(dart[-1])],
+                s=10,
+                alpha=0.6,
+                marker="x",
             )
             y = np.arange(0, np.shape(diff_img)[0])
             x = (
