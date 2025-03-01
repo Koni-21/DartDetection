@@ -1,10 +1,10 @@
 import logging
+import itertools
 
 import numpy as np
 import matplotlib.pyplot as plt
 
 from sklearn.cluster import DBSCAN
-
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger()
@@ -133,7 +133,7 @@ def get_roi_coords(diff_img, incoming=True, thresh_binarise=0.1):
 
     Args:
         img (numpy.ndarray): The input image as a NumPy array.
-        thresh_binarise (float, optional): The threshold for binarizing the image.
+        thresh_binarise (float, optional): The threshold for binarising the image.
             Pixels with values less than (1 - thresh_binarise) are considered
             part of the dart (ROI). Default is 0.1.
 
@@ -378,66 +378,6 @@ def lin_regression_on_cluster(img, cluster, weighted=True):
     return (pos, w0, w1, x, y, pos_discretization_error)
 
 
-def check_comb_dilate_nr_of_clusters(
-    clusters_in, clusters_out, img_width=0, dilate_cluster_by_n_px=0
-):
-    """
-    Checks the number of clusters in the incoming and outgoing lists,
-    dilate the single clusters and cobines multiple clusters, if necessary
-    and returns the modified appropriate clusters.
-
-    Args:
-        clusters_in (list): A list of incoming clusters.
-        clusters_out (list): A list of outgoing clusters.
-        img_width (int): Width of the image. Only needed for dilation. Defaults to 0.
-        dilate_cluster_by_n_px (int): number of pixels to extent each row of
-            the cluster on each side. Defaults to 0.
-
-    Returns:
-        tuple: A tuple containing the selected incoming cluster and
-            outgoing cluster. If there are no clusters in either list,
-            an empty list is returned for that position in the tuple.
-            If there are multiple clusters in either list,
-            a warning is logged and only the first cluster is used.
-    """
-    nr_clusters_in = len(clusters_in)
-    nr_clusters_out = len(clusters_out)
-
-    if nr_clusters_in == 0 and nr_clusters_out == 0:
-        return ([], [])
-
-    if nr_clusters_in > 1:
-        if dilate_cluster_by_n_px > 0:
-            clusters_in = [
-                dilate_cluster(cluster, img_width, dilate_cluster_by_n_px)
-                for cluster in clusters_in
-            ]
-        cluster_in = np.vstack(clusters_in)
-        LOGGER.warning(
-            f"More than one new 'incoming' cluster found: {nr_clusters_in=}. "
-            f"Using the combined cluster with size {len(cluster_in)}."
-        )
-    elif nr_clusters_in == 1:
-        cluster_in = clusters_in[0]
-        if dilate_cluster_by_n_px > 0:
-            cluster_in = dilate_cluster(cluster_in, img_width, dilate_cluster_by_n_px)
-    elif nr_clusters_in == 0:
-        cluster_in = []
-
-    if nr_clusters_out > 1:
-        cluster_out = np.vstack(clusters_out)
-        LOGGER.warning(
-            f"More than one new 'leaving' cluster found: {nr_clusters_out=}. "
-            f"Using the combined cluster with size {len(cluster_out)}."
-        )
-    elif nr_clusters_out == 1:
-        cluster_out = clusters_out[0]
-    elif nr_clusters_out == 0:
-        cluster_out = []
-
-    return (cluster_in, cluster_out)
-
-
 def dart_fully_arrived(img_height, cluster_in, distance_to_bottom=1):
     """
     Determines if the dart has fully arrived based on the image height
@@ -458,6 +398,34 @@ def dart_fully_arrived(img_height, cluster_in, distance_to_bottom=1):
         LOGGER.info(f"Dart has not arrived yet: {max_row=}, {img_height=}")
         return False
     return True
+
+
+def calculate_position_from_cluster_and_image(img, cluster, weighted=True):
+    """
+    Calculate the position, angle, support, and correlation coefficient
+    from a given image and cluster.
+
+    Args:
+        img (numpy.ndarray): The image data.
+        cluster (list): A list of points representing the cluster.
+        weighted (bool): Calculate the regression weighted on image values or
+            only unweighted using only the cluster. Defaults to True.
+
+    Returns:
+        tuple: A tuple containing:
+            - pos (tuple): The calculated position.
+            - angle_pred (float): The predicted angle in degrees.
+            - support (int): The number of points in the cluster.
+            - r (float): The correlation coefficient between x and y
+                coordinates of the cluster points.
+            - error (float): Estimator of the position discretization error
+    """
+    pos, b, m, x, y, error = lin_regression_on_cluster(img, cluster, weighted=weighted)
+    angle_pred = np.degrees(np.arctan(-1 * m))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        r = np.corrcoef(x, y)[0][1]
+    support = len(np.unique(cluster[:, 0]))
+    return pos, angle_pred, support, r, error
 
 
 def dart_moved(diff_img, cluster_in, cluster_out, difference_thresh=1):
@@ -492,6 +460,9 @@ def dart_moved(diff_img, cluster_in, cluster_out, difference_thresh=1):
             )
             return True
     return False
+
+
+### Occlusion Cases ####
 
 
 def overlap(cluster, saved_dart_cluster):
@@ -533,31 +504,210 @@ def differentiate_overlap(cluster, overlap_points):
             - "right_side_overlap" (int): Number of rows with overlap on the right side.
     """
     usable_rows = []
-    left_side_overlap = 0
-    right_side_overlap = 0
+    left_side_overlap_rows = []
+    right_side_overlap_rows = []
     middle_overlap_rows = []
+    single_pixel_thick_overlap_rows = []
+
     for row in np.unique(cluster[:, 0]):
         if row not in overlap_points[:, 0]:
             usable_rows.append(row)
         elif (
             np.min(cluster[cluster[:, 0] == row, 1])
+            == np.max(cluster[cluster[:, 0] == row, 1])
+            and np.min(cluster[cluster[:, 0] == row, 1])
             in overlap_points[overlap_points[:, 0] == row, 1]
         ):
-            left_side_overlap += 1
+            single_pixel_thick_overlap_rows.append(row)
+
+        elif (
+            np.min(cluster[cluster[:, 0] == row, 1])
+            in overlap_points[overlap_points[:, 0] == row, 1]
+        ):
+            left_side_overlap_rows.append(row)
         elif (
             np.max(cluster[cluster[:, 0] == row, 1])
             in overlap_points[overlap_points[:, 0] == row, 1]
         ):
-            right_side_overlap += 1
+            right_side_overlap_rows.append(row)
         else:
             middle_overlap_rows.append(row)
 
     return {
         "fully_usable_rows": usable_rows,
         "middle_occluded_rows": middle_overlap_rows,
-        "left_side_overlap": left_side_overlap,
-        "right_side_overlap": right_side_overlap,
+        "single_pixel_thick_overlap_rows": single_pixel_thick_overlap_rows,
+        "left_side_overlap_rows": left_side_overlap_rows,
+        "right_side_overlap_rows": right_side_overlap_rows,
     }
+
+
+def occlusion_kind(occluded_rows, thresh_needed_rows=2):
+    """
+    Determines the kind of occlusion based on the provided occluded rows.
+
+    Args:
+        occluded_rows (dict): A dictionary containing the following keys:
+            - "fully_usable_rows": List of rows that are fully usable.
+            - "middle_occluded_rows": List of rows where the middle is occluded.
+            - "left_side_overlap_rows": List of rows where the left side is occluded.
+            - "right_side_overlap_rows": List of rows where the right side is occluded.
+        thresh_needed_rows (int, optional): The threshold number of rows needed
+            to consider them usable. Defaults to 2.
+    Returns:
+        str: A string indicating the type of occlusion:
+            - "fully_useable" if there are more than `thresh_needed_rows` fully
+                usable rows.
+            - "left_side_fully_occluded" or "right_side_fully_occluded" if one
+                side of the dart is fully occluded.
+        Raises:
+            NotImplementedError: If only the center of the dart is occluded.
+    """
+    usable_rows = occluded_rows["fully_usable_rows"]
+    middle_overlap_rows = occluded_rows["middle_occluded_rows"]
+    left_side_overlap = occluded_rows["left_side_overlap_rows"]
+    right_side_overlap = occluded_rows["right_side_overlap_rows"]
+
+    if len(usable_rows) > thresh_needed_rows:
+        LOGGER.info(
+            f"Fully visible rows found: {len(usable_rows)=}, {usable_rows=}, {thresh_needed_rows=}"
+        )
+        return "fully_useable"
+    elif len(middle_overlap_rows) > thresh_needed_rows:
+        LOGGER.info(
+            f"Only the center of the dart/cluster is occluded: {len(middle_overlap_rows)=}, {middle_overlap_rows=}"
+        )
+        return "middle_occluded"
+    elif len(left_side_overlap) > len(right_side_overlap):
+        LOGGER.info(
+            f"Left side of the dart/cluster is fully occluded: {left_side_overlap=}, {right_side_overlap=}"
+        )
+        return "left_side_fully_occluded"
+
+    elif len(right_side_overlap) > len(left_side_overlap):
+        LOGGER.info(
+            f"right side of the dart/cluster is fully occluded: {left_side_overlap=}, {right_side_overlap=}"
+        )
+        return "right_side_fully_occluded"
+    else:
+        raise ValueError(f"Undefined overlap case: {occluded_rows}")
+
+
+def check_overlap(cluster_in, saved_darts, thresh_overlapping_points=1):
+    """
+    Check for overlap between the current dart cluster and previously saved darts.
+
+    Args:
+        cluster_in (dict): The current dart cluster to check for overlap.
+        saved_darts (dict): A dictionary of previously saved darts with their clusters.
+        thresh_overlapping_points (int): minimum overlapping points to count as
+            overlapping darts. Defaults to 1.
+
+    Returns:
+        dict: A dictionary containing information about the overlap if any is found.
+            The dictionary includes:
+            - "overlapping_darts" (list): Indices of the darts that overlap with the
+                current dart.
+            - "occlusion_kind" (str): The kind of occlusion detected.
+            - "overlap_points" (numpy.ndarray): Points where the overlap occurs.
+            - Additional keys from the occluded_rows dictionary.
+    """
+    if len(saved_darts) == 0:
+        return [], []
+    overlapping_darts = []
+    overlap_points = []
+
+    for overlapping_dart in range(1, len(saved_darts) + 1):
+
+        saved_dart_i = saved_darts[f"d{overlapping_dart}"]["cluster"]
+        overlap_points_single = overlap(cluster_in, saved_dart_i)
+        if len(overlap_points_single) >= thresh_overlapping_points:
+            overlap_points.append(overlap_points_single)
+            LOGGER.info(
+                f"Current dart {len(saved_darts) + 1} is overlapping"
+                f" with dart {overlapping_dart}."
+            )
+            overlapping_darts.append(overlapping_dart)
+
+    return overlapping_darts, overlap_points
+
+
+def calculate_position_from_occluded_dart(
+    occlusion_dict,
+    cluster_in,
+    diff_img,
+    current_img,
+    saved_darts,
+    min_usable_columns_middle_overlap=1,
+):
+    """
+    Calculate the position of a dart from occluded dart data.
+    This function determines the position, angle, support, and Pearson
+    correlation of a dart based on occlusion information and image data.
+    It handles different types of occlusions and combines data from
+    overlapping darts if necessary.
+
+    Args:
+        occlusion_dict (dict): Dictionary containing occlusion information.
+        cluster_in (ndarray): Cluster data for the current dart.
+        diff_img (ndarray): Difference image used for position calculation.
+        current_img (ndarray): Current image frame.
+        saved_darts (dict): Dictionary containing saved dart data.
+
+    Returns:
+        tuple: A tuple containing:
+            - pos (float): Calculated position of the dart.
+            - angle (float): Calculated angle of the dart.
+            - support (float): nr of support pixels for the calculation.
+            - r (float): Pearson correlation of the averaged rows.
+            - error (float): Error value between combined dart positions.
+    """
+    weighted = True
+    if occlusion_dict.get("occlusion_kind", None) == "fully_useable":
+        cluster_in = filter_cluster_by_usable_rows(
+            occlusion_dict["fully_usable_rows"], cluster_in
+        )
+    elif occlusion_dict.get("occlusion_kind", None) == "middle_occluded":
+        cluster_in = filter_middle_overlap_combined_cluster(
+            occlusion_dict["middle_occluded_rows"],
+            occlusion_dict["overlap_points"],
+            cluster_in,
+            min_cols=min_usable_columns_middle_overlap,
+        )
+        weighted = False
+
+    pos, angle, support, r, error = calculate_position_from_cluster_and_image(
+        diff_img, cluster_in, weighted=weighted
+    )
+
+    if occlusion_dict.get("occlusion_kind", None) in [
+        "left_side_fully_occluded",
+        "right_side_fully_occluded",
+    ]:
+        overlapping_dart = np.min(occlusion_dict["overlapping_darts"])
+        cluster_combined = np.vstack(
+            [saved_darts[f"d{overlapping_dart}"]["cluster"], cluster_in]
+        )
+        diff_img_dx = compare_imgs(
+            saved_darts[f"d{overlapping_dart}"]["img_pre"],
+            current_img,
+        )
+
+        pos_2, angle_2, support_2, r_2, error = (
+            calculate_position_from_cluster_and_image(diff_img_dx, cluster_combined)
+        )
+        pos = (pos + pos_2) / 2
+        angle = (angle + angle_2) / 2
+        r = (r + r_2) / 2
+        support = min(support, support_2)
+        error_pos = abs(pos - pos_2)
+        if error_pos > error:
+            error = error_pos
+
+    return (pos, angle, support, r, error, cluster_in)
+
+
+#### Fully usable rows detected
 
 
 def filter_cluster_by_usable_rows(usable_rows, cluster):
@@ -576,6 +726,104 @@ def filter_cluster_by_usable_rows(usable_rows, cluster):
         reduced_cluster.append(cluster[cluster[:, 0] == row])
     cluster = np.vstack(reduced_cluster)
     return cluster
+
+
+### Cases with multiple clusters detected
+
+
+def check_which_sides_are_occluded_of_the_clusters(clusters, overlap):
+    """
+    Determines which sides of the clusters are occluded based on the given overlap.
+
+    Args:
+        clusters (list): A list of clusters where each cluster is a collection
+            of points or data.
+        overlap (any): The overlap data used to determine occlusions.
+
+    Returns:
+        tuple: A tuple containing two dictionaries:
+            - which_side_overlap (dict): A dictionary where the key is the
+                cluster ID and the value is the side overlap information.
+            - occluded_rows_clusters (dict): A dictionary where the key is
+                the cluster ID and the value is the occluded rows information.
+    """
+    which_side_overlap = {}
+    occluded_rows_clusters = {}
+    for cluster_id, cluster in enumerate(clusters):
+        occluded_rows = differentiate_overlap(cluster, overlap)
+        side_overlap = occlusion_kind(occluded_rows)
+        which_side_overlap[cluster_id] = side_overlap
+        occluded_rows_clusters[cluster_id] = occluded_rows
+    return which_side_overlap, occluded_rows_clusters
+
+
+def _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(cluster, left=True):
+    if left:
+        return np.array(
+            [
+                [row, np.max(cluster[cluster[:, 0] == row][:, 1])]
+                for row in np.unique(cluster[:, 0])
+            ]
+        )
+    else:
+        return np.array(
+            [
+                [row, np.min(cluster[cluster[:, 0] == row][:, 1])]
+                for row in np.unique(cluster[:, 0])
+            ]
+        )
+
+
+def calculate_angle_of_different_clusters(
+    diff_img,
+    clusters,
+    which_side_overlap,
+    occluded_rows_clusters,
+):
+    angle_of_clusters = {}
+    for cluster_id, cluster in enumerate(clusters):
+        if which_side_overlap[cluster_id] == "right_side_fully_occluded":
+            cluster_reduced = (
+                _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(
+                    cluster, False
+                )
+            )
+        elif which_side_overlap[cluster_id] == "left_side_fully_occluded":
+            cluster_reduced = (
+                _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(
+                    cluster, True
+                )
+            )
+        elif which_side_overlap[cluster_id] == "fully_usable":
+            cluster_reduced = filter_cluster_by_usable_rows(
+                occluded_rows_clusters[cluster_id], cluster
+            )
+        else:
+            LOGGER.warning(
+                f"To calculate the angle of cluster: {cluster_id}: "
+                f"{which_side_overlap[cluster_id]} "
+                "the unreduced cluster is used."
+            )
+            cluster_reduced = cluster
+
+        pos, angle, support, _, _ = calculate_position_from_cluster_and_image(
+            diff_img, cluster_reduced, weighted=False
+        )
+        angle_of_clusters[cluster_id] = angle
+        print(f"{angle=}")
+    return angle_of_clusters
+
+
+def combine_clusters_based_on_the_angle(clusters, angle_of_clusters):
+    combined_clusters = []
+    for (cluster_id_1, cluster_1), (cluster_id_2, cluster_2) in itertools.combinations(
+        enumerate(clusters), 2
+    ):
+        if np.isclose(
+            angle_of_clusters[cluster_id_1], angle_of_clusters[cluster_id_2], atol=5
+        ):
+            combined_clusters.append(np.vstack([cluster_1, cluster_2]))
+    return combined_clusters
 
 
 def filter_middle_overlap_combined_cluster(
@@ -630,194 +878,6 @@ def filter_middle_overlap_combined_cluster(
                 )
             ]
     return combined_cluster
-
-
-def calculate_position_from_cluster_and_image(img, cluster, weighted=True):
-    """
-    Calculate the position, angle, support, and correlation coefficient
-    from a given image and cluster.
-
-    Args:
-        img (numpy.ndarray): The image data.
-        cluster (list): A list of points representing the cluster.
-        weighted (bool): Calculate the regression weighted on image values or
-            only unweighted using only the cluster. Defaults to True.
-
-    Returns:
-        tuple: A tuple containing:
-            - pos (tuple): The calculated position.
-            - angle_pred (float): The predicted angle in degrees.
-            - support (int): The number of points in the cluster.
-            - r (float): The correlation coefficient between x and y
-                coordinates of the cluster points.
-            - error (float): Estimator of the position discretization error
-    """
-    pos, b, m, x, y, error = lin_regression_on_cluster(img, cluster, weighted=weighted)
-    angle_pred = np.degrees(np.arctan(-1 * m))
-    with np.errstate(divide="ignore", invalid="ignore"):
-        r = np.corrcoef(x, y)[0][1]
-    support = len(np.unique(cluster[:, 0]))
-    return pos, angle_pred, support, r, error
-
-
-def occlusion_kind(occluded_rows, thresh_needed_rows=2):
-    """
-    Determines the kind of occlusion based on the provided occluded rows.
-
-    Args:
-        occluded_rows (dict): A dictionary containing the following keys:
-            - "fully_usable_rows": List of rows that are fully usable.
-            - "middle_occluded_rows": List of rows where the middle is occluded.
-            - "left_side_overlap": List of rows where the left side is occluded.
-            - "right_side_overlap": List of rows where the right side is occluded.
-        thresh_needed_rows (int, optional): The threshold number of rows needed
-            to consider them usable. Defaults to 2.
-    Returns:
-        str: A string indicating the type of occlusion:
-            - "fully_useable" if there are more than `thresh_needed_rows` fully usable rows.
-            - "one_side_fully_occluded" if one side of the dart is fully occluded.
-        Raises:
-            NotImplementedError: If only the center of the dart is occluded.
-    """
-    usable_rows = occluded_rows["fully_usable_rows"]
-    middle_overlap_rows = occluded_rows["middle_occluded_rows"]
-    left_side_overlap = occluded_rows["left_side_overlap"]
-    right_side_overlap = occluded_rows["right_side_overlap"]
-
-    if len(usable_rows) > thresh_needed_rows:
-        LOGGER.info(
-            f"Fully visible rows found: {len(usable_rows)=}, {usable_rows=}, {thresh_needed_rows=}"
-        )
-        return "fully_useable"
-    elif len(middle_overlap_rows) > thresh_needed_rows:
-        LOGGER.info(
-            f"Only the center of the dart is occluded: {len(middle_overlap_rows)=}, {middle_overlap_rows=}"
-        )
-        return "middle_occluded"
-    else:
-        LOGGER.info(
-            f"One side of the dart is fully occluded: {left_side_overlap=}, {right_side_overlap=}"
-        )
-        return "one_side_fully_occluded"
-
-
-def check_overlap(cluster_in, saved_darts, thresh_overlapping_points=1):
-    """
-    Check for overlap between the current dart cluster and previously saved darts.
-
-    Args:
-        cluster_in (dict): The current dart cluster to check for overlap.
-        saved_darts (dict): A dictionary of previously saved darts with their clusters.
-        thresh_overlapping_points (int): minimum overlapping points to count as
-            overlapping darts. Defaults to 1.
-
-    Returns:
-        dict: A dictionary containing information about the overlap if any is found.
-            The dictionary includes:
-            - "overlapping_darts" (list): Indices of the darts that overlap with the
-                current dart.
-            - "occlusion_kind" (str): The kind of occlusion detected.
-            - "overlap_points" (numpy.ndarray): Points where the overlap occurs.
-            - Additional keys from the occluded_rows dictionary.
-    """
-    if len(saved_darts) >= 1:
-        overlapping_darts = []
-        overlap_points = []
-
-        for overlapping_dart in range(1, len(saved_darts) + 1):
-
-            saved_dart_i = saved_darts[f"d{overlapping_dart}"]["cluster"]
-            overlap_points_single = overlap(cluster_in, saved_dart_i)
-            if len(overlap_points_single) >= thresh_overlapping_points:
-                overlap_points.append(overlap_points_single)
-                LOGGER.info(
-                    f"Current dart {len(saved_darts) + 1} is overlapping"
-                    f" with dart {overlapping_dart}."
-                )
-                overlapping_darts.append(overlapping_dart)
-
-        if len(overlapping_darts) > 0:
-            overlap_points = np.vstack(overlap_points)
-            occluded_rows = differentiate_overlap(cluster_in, overlap_points)
-            occlusion_dict = {
-                "overlapping_darts": overlapping_darts,
-                "occlusion_kind": occlusion_kind(occluded_rows),
-                "overlap_points": overlap_points,
-            }
-            return occlusion_dict | occluded_rows
-    return {}
-
-
-def calculate_position_from_occluded_dart(
-    occlusion_dict,
-    cluster_in,
-    diff_img,
-    current_img,
-    saved_darts,
-    min_usable_columns_middle_overlap=1,
-):
-    """
-    Calculate the position of a dart from occluded dart data.
-    This function determines the position, angle, support, and Pearson
-    correlation of a dart based on occlusion information and image data.
-    It handles different types of occlusions and combines data from
-    overlapping darts if necessary.
-
-    Args:
-        occlusion_dict (dict): Dictionary containing occlusion information.
-        cluster_in (ndarray): Cluster data for the current dart.
-        diff_img (ndarray): Difference image used for position calculation.
-        current_img (ndarray): Current image frame.
-        saved_darts (dict): Dictionary containing saved dart data.
-
-    Returns:
-        tuple: A tuple containing:
-            - pos (float): Calculated position of the dart.
-            - angle (float): Calculated angle of the dart.
-            - support (float): nr of support pixels for the calculation.
-            - r (float): Pearson correlation of the averaged rows.
-            - error (float): Error value between combined dart positions.
-    """
-    weighted = True
-    if occlusion_dict.get("occlusion_kind", None) == "fully_useable":
-        cluster_in = filter_cluster_by_usable_rows(
-            occlusion_dict["fully_usable_rows"], cluster_in
-        )
-    elif occlusion_dict.get("occlusion_kind", None) == "middle_occluded":
-        cluster_in = filter_middle_overlap_combined_cluster(
-            occlusion_dict["middle_occluded_rows"],
-            occlusion_dict["overlap_points"],
-            cluster_in,
-            min_cols=min_usable_columns_middle_overlap,
-        )
-        weighted = False
-
-    pos, angle, support, r, error = calculate_position_from_cluster_and_image(
-        diff_img, cluster_in, weighted=weighted
-    )
-
-    if occlusion_dict.get("occlusion_kind", None) == "one_side_fully_occluded":
-        overlapping_dart = np.min(occlusion_dict["overlapping_darts"])
-        cluster_combined = np.vstack(
-            [saved_darts[f"d{overlapping_dart}"]["cluster"], cluster_in]
-        )
-        diff_img_dx = compare_imgs(
-            saved_darts[f"d{overlapping_dart}"]["img_pre"],
-            current_img,
-        )
-
-        pos_2, angle_2, support_2, r_2, error = (
-            calculate_position_from_cluster_and_image(diff_img_dx, cluster_combined)
-        )
-        pos = (pos + pos_2) / 2
-        angle = (angle + angle_2) / 2
-        r = (r + r_2) / 2
-        support = min(support, support_2)
-        error_pos = abs(pos - pos_2)
-        if error_pos > error:
-            error = error_pos
-
-    return (pos, angle, support, r, error, cluster_in)
 
 
 def single_dart_removed(diff_img, cluster_out, saved_darts, tolerance_px=1):
@@ -950,28 +1010,28 @@ class SingleCamLocalize:
             dbscan_eps=self.dbscan_eps_cluster,
             dbscan_min_samples=self.dbscan_min_samples_cluster,
         )
-        cluster_in, cluster_out = check_comb_dilate_nr_of_clusters(
-            clusters_in,
-            clusters_out,
-            img_width=np.shape(diff_img)[1],
-            dilate_cluster_by_n_px=self.dilate_cluster_by_n_px,
-        )
+        self.clusters_in, self.clusters_out = clusters_in, clusters_out
 
-        if len(cluster_in) > 0 and len(cluster_out) > 0:
-            return self.incoming_and_leaving_cluster_detected(
-                diff_img, cluster_in, cluster_out
-            )
-        elif len(cluster_in) > 0:
-            return self.incoming_cluster_detected(diff_img, cluster_in)
-        elif len(cluster_out) > 0:  # only coordinates out
-            return self.leaving_cluster_detected(diff_img, cluster_out)
-        else:
+        if len(clusters_in) == 0 and len(clusters_out) == 0:
             return None
+        elif len(clusters_in) == 1 and len(clusters_out) == 0:
+            return self.incoming_cluster_detected(diff_img, clusters_in[0])
+        elif len(clusters_in) == 1 and len(clusters_out) == 0:
+            return self.one_incoming_and_leaving_cluster_detected(
+                diff_img, clusters_in[0], clusters_out[0]
+            )
+        elif len(clusters_in) > 1:
+            return self.multiple_clusters_detected(diff_img, clusters_in, clusters_out)
+        elif len(clusters_out) == 1:
+            return self.leaving_cluster_detected(diff_img, clusters_out[0])
+        elif len(clusters_out) > 1:
+            return self.leaving_cluster_detected(diff_img, np.vstack(clusters_out))
 
     def incoming_cluster_detected(self, diff_img, cluster_in):
         """
         Detects an incoming cluster in the given difference image and processes it.
-        This method checks if a dart has fully arrived or if the distance is 2.
+        This method checks if a dart has fully arrived or if two consecutive
+        images still show the cluster (Dart does not move anymore).
         If so, it checks for occlusions with previously saved darts and calculates
         the position, angle, support, and radius of the dart. The results are then
         saved in the `saved_darts` dictionary with additional information.
@@ -980,52 +1040,149 @@ class SingleCamLocalize:
             diff_img (numpy.ndarray): The difference image in which the cluster
                 is detected.
             cluster_in (list): The cluster data to be processed.
+
         Returns:
             dict: A dictionary containing the detected dart's position, angle,
                 support, radius, error, cluster, and post image if a dart
                 is detected and processed. Otherwise, None.
         """
         if (
-            dart_fully_arrived(
+            not dart_fully_arrived(
                 np.shape(diff_img)[0], cluster_in, self.distance_to_bottom_not_arrived
             )
-            or self.distance == 2
+            and self.distance < 2
         ):
-            cluster_mod = cluster_in
-            occlusion_dict = check_overlap(cluster_in, self.saved_darts)
-            if len(occlusion_dict) > 0:
-                pos, angle, support, r, error, cluster_mod = (
-                    calculate_position_from_occluded_dart(
-                        occlusion_dict,
-                        cluster_in,
-                        diff_img,
-                        self.current_img,
-                        self.saved_darts,
-                        self.min_usable_columns_middle_overlap,
-                    )
-                )
-            else:
-                pos, angle, support, r, error = (
-                    calculate_position_from_cluster_and_image(diff_img, cluster_in)
-                )
-
-            self.distance = 1
-            self.dart += 1
-
-            self.saved_darts[f"d{self.dart}"] = {
-                "pos": pos,
-                "angle": angle,
-                "r": r,
-                "support": support,
-                "error": error,
-                "cluster": cluster_in,
-                "cluster_mod": cluster_mod,
-                "img_pre": self.imgs[-self.distance - 1],
-            }
-
-            return self.saved_darts[f"d{self.dart}"]
-        else:
             self.distance = 2
+            return None
+        self.distance = 1
+
+        cluster_mod = cluster_in
+        cluster_in = dilate_cluster(
+            cluster_in, np.shape(diff_img)[1], self.dilate_cluster_by_n_px
+        )
+        overlapping_darts, overlap_points = check_overlap(cluster_in, self.saved_darts)
+        if len(overlapping_darts) > 0:
+            overlap_points = np.vstack(overlap_points)
+            occluded_rows = differentiate_overlap(cluster_in, overlap_points)
+            occlusion_dict = {
+                "overlapping_darts": overlapping_darts,
+                "occlusion_kind": occlusion_kind(occluded_rows),
+                "overlap_points": overlap_points,
+            }
+            occlusion_dict = occlusion_dict | occluded_rows
+
+            pos, angle, support, r, error, cluster_mod = (
+                calculate_position_from_occluded_dart(
+                    occlusion_dict,
+                    cluster_in,
+                    diff_img,
+                    self.current_img,
+                    self.saved_darts,
+                    self.min_usable_columns_middle_overlap,
+                )
+            )
+        else:
+            pos, angle, support, r, error = calculate_position_from_cluster_and_image(
+                diff_img, cluster_in
+            )
+
+        self.dart += 1
+
+        self.saved_darts[f"d{self.dart}"] = {
+            "pos": pos,
+            "angle": angle,
+            "r": r,
+            "support": support,
+            "error": error,
+            "cluster": cluster_in,
+            "cluster_mod": cluster_mod,
+            "img_pre": self.imgs[-self.distance - 1],
+        }
+
+        return self.saved_darts[f"d{self.dart}"]
+
+    def multiple_clusters_detected(self, diff_img, clusters_in, clusters_out):
+        LOGGER.warning(
+            f"More than one new cluster found: {len(clusters_in)=}, {len(clusters_out)=}). "
+        )
+
+        if self.distance < 2:
+            self.distance = 2
+            return None
+
+        # check fully usable clusters:
+        fully_usable_clusters = []
+        for nr, cluster_in in enumerate(clusters_in):
+            cluster_in = dilate_cluster(
+                cluster_in, np.shape(diff_img)[1], self.dilate_cluster_by_n_px
+            )
+            overlapping_darts, overlap_points = check_overlap(
+                cluster_in, self.saved_darts
+            )
+            if len(overlapping_darts) > 0:
+                overlap_points = np.vstack(overlap_points)
+                occluded_rows = differentiate_overlap(cluster_in, overlap_points)
+                if occlusion_kind(occluded_rows) == "fully_useable":
+                    fully_usable_clusters.append(nr)
+        if len(fully_usable_clusters) == 1:
+            return self.incoming_cluster_detected(
+                diff_img, clusters_in[fully_usable_clusters[0]]
+            )
+        elif len(fully_usable_clusters) > 1:
+            cluster_sizes = []
+            for idx, nr in enumerate(fully_usable_clusters):
+                cluster_sizes.append(len(clusters_in[fully_usable_clusters[idx]]))
+            return self.incoming_cluster_detected(
+                diff_img, clusters_in[fully_usable_clusters[np.argmax(cluster_sizes)]]
+            )
+
+        overlapping_darts, overlap_points = check_overlap(
+            np.vstack(clusters_in), self.saved_darts
+        )
+        if len(overlapping_darts) == 0:
+            LOGGER.warning(
+                f"Unknown object detected: {len(clusters_in)=}, {len(clusters_out)=}"
+            )
+            return None
+
+        overlap_points = np.vstack(overlap_points)
+        which_side_overlap, occluded_rows_clusters = (
+            check_which_sides_are_occluded_of_the_clusters(clusters_in, overlap_points)
+        )
+        angle_of_clusters = calculate_angle_of_different_clusters(
+            diff_img,
+            clusters_in,
+            which_side_overlap,
+            occluded_rows_clusters,
+        )
+        combined_clusters = combine_clusters_based_on_the_angle(
+            clusters_in, angle_of_clusters
+        )
+
+        if len(combined_clusters) == 1:
+            # Only middle occluded
+            return self.incoming_cluster_detected(diff_img, np.vstack(clusters_in))
+        elif len(combined_clusters) == 2:
+            distinct_clusters = combined_clusters
+        elif len(combined_clusters) == 0:
+            if len(clusters_in) == 2:
+                distinct_clusters = [clusters_in[0], clusters_in[1]]
+        else:
+            print(
+                f"unexpected overlapping case occurred  {len(clusters_in)=}, {len(combined_clusters)=}"
+            )
+
+        if len(distinct_clusters) == 2:
+            # choose which cluster is the new: more or less randomly
+            # choose the bigger cluster as the new one
+            if np.size(distinct_clusters[0]) > np.size(distinct_clusters[1]):
+                new_dart_cluster = distinct_clusters[0]
+                old_dart_cluster = distinct_clusters[1]
+            else:
+                new_dart_cluster = distinct_clusters[1]
+                old_dart_cluster = distinct_clusters[0]
+
+        return self.incoming_cluster_detected(diff_img, new_dart_cluster)
 
     def leaving_cluster_detected(self, diff_img, cluster_out):
         """
@@ -1037,8 +1194,7 @@ class SingleCamLocalize:
         Returns:
             None
         """
-        # plt.imshow(diff_img, cmap="gray")
-        # plt.scatter(cluster_out[:, 1], cluster_out[:, 0], c="g", marker="x")
+
         removed_dart_nr = single_dart_removed(
             diff_img, cluster_out, self.saved_darts, self.dart_removed_tolerance
         )
@@ -1048,7 +1204,9 @@ class SingleCamLocalize:
 
         return None
 
-    def incoming_and_leaving_cluster_detected(self, diff_img, cluster_in, cluster_out):
+    def one_incoming_and_leaving_cluster_detected(
+        self, diff_img, cluster_in, cluster_out
+    ):
         """
         Detects if a dart has moved.
         If a dart movement is detected, it returns None. Otherwise, it calls and
@@ -1102,7 +1260,6 @@ class SingleCamLocalize:
         Args:
             ax (matplotlib.axes.Axes, optional): The axes on which to plot the image and darts.
                 If None, a new figure and axes will be created.
-
         """
         if ax == None:
             fig, ax = plt.subplots(figsize=(10, 5))
