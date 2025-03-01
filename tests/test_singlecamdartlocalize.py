@@ -25,6 +25,7 @@ from dartdetect.singlecamdartlocalize import (
     calculate_position_from_cluster_and_image,
     occlusion_kind,
     check_overlap,
+    check_occlusion_type_of_a_single_cluster,
     calculate_position_from_occluded_dart,
     single_dart_removed,
     check_which_sides_are_occluded_of_the_clusters,
@@ -881,6 +882,102 @@ class TestCheckOverlap(unittest.TestCase):
     #     saved_darts = {"d1": {"cluster": np.array([[0, 2], [1, 2]])}}
     #     with self.assertRaises(NotImplementedError):
     #         check_overlap(cluster_in, saved_darts)
+
+
+class TestCheckOcclusionTypeOfASingleCluster(unittest.TestCase):
+    def test_no_saved_darts(self):
+        # Test when there are no saved darts
+        cluster_in = np.array([[0, 0], [1, 1], [2, 2]])
+        result = check_occlusion_type_of_a_single_cluster(cluster_in, saved_darts={})
+        self.assertEqual(result, {})
+
+    def test_no_overlap(self):
+        # Test when there's no overlap with saved darts
+        cluster_in = np.array([[0, 0], [1, 1], [2, 2]])
+        saved_darts = {"d1": {"cluster": np.array([[5, 5], [6, 6], [7, 7]])}}
+        result = check_occlusion_type_of_a_single_cluster(cluster_in, saved_darts)
+        self.assertEqual(result, {})
+
+    def test_single_dart_overlap(self):
+        # Test with overlap with one saved dart
+        cluster_in = np.array([[0, 0], [1, 1], [2, 2]])
+        saved_darts = {"d1": {"cluster": np.array([[1, 1], [3, 3], [4, 4]])}}
+        result = check_occlusion_type_of_a_single_cluster(cluster_in, saved_darts)
+
+        # Check that result is not empty
+        self.assertNotEqual(result, {})
+
+        # Check that the result contains the expected keys
+        expected_keys = [
+            "overlapping_darts",
+            "occlusion_kind",
+            "overlap_points",
+            "fully_usable_rows",
+            "middle_occluded_rows",
+            "single_pixel_thick_overlap_rows",
+            "left_side_overlap_rows",
+            "right_side_overlap_rows",
+        ]
+        for key in expected_keys:
+            self.assertIn(key, result)
+
+        # Check specific values
+        self.assertEqual(result["overlapping_darts"], [1])
+        self.assertIn(
+            result["occlusion_kind"],
+            [
+                "fully_useable",
+                "middle_occluded",
+                "left_side_fully_occluded",
+                "right_side_fully_occluded",
+            ],
+        )
+        # Check that overlap_points contains the expected point
+        overlap_points_as_tuples = [tuple(point) for point in result["overlap_points"]]
+        self.assertIn((1, 1), overlap_points_as_tuples)
+
+    def test_multiple_darts_overlap(self):
+        # Test with overlap with multiple saved darts
+        cluster_in = np.array([[0, 1], [1, 1], [1, 2], [0, 2]])
+        saved_darts = {
+            "d1": {"cluster": np.array([[0, 1], [1, 1]])},
+            "d2": {"cluster": np.array([[0, 4], [1, 4]])},
+        }
+        result = check_occlusion_type_of_a_single_cluster(cluster_in, saved_darts)
+
+        # Check that result is not empty
+        self.assertNotEqual(result, {})
+
+        # Check that the result contains the expected keys
+        expected_keys = [
+            "overlapping_darts",
+            "occlusion_kind",
+            "overlap_points",
+            "fully_usable_rows",
+            "middle_occluded_rows",
+            "single_pixel_thick_overlap_rows",
+            "left_side_overlap_rows",
+            "right_side_overlap_rows",
+        ]
+        for key in expected_keys:
+            self.assertIn(key, result)
+
+        # Check specific values
+        self.assertEqual(sorted(result["overlapping_darts"]), [1])
+        self.assertIn(
+            result["occlusion_kind"],
+            [
+                "fully_useable",
+                "middle_occluded",
+                "left_side_fully_occluded",
+                "right_side_fully_occluded",
+            ],
+        )
+
+        # Check that overlap_points contains the expected points
+        overlap_points_as_tuples = [tuple(point) for point in result["overlap_points"]]
+        self.assertIn((1, 1), overlap_points_as_tuples)
+        self.assertIn((0, 1), overlap_points_as_tuples)
 
 
 class TestCalculatePositionFromOccludedDart(unittest.TestCase):

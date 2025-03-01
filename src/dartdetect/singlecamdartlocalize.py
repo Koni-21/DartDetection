@@ -568,7 +568,7 @@ def occlusion_kind(occluded_rows, thresh_needed_rows=2):
     left_side_overlap = occluded_rows["left_side_overlap_rows"]
     right_side_overlap = occluded_rows["right_side_overlap_rows"]
 
-    if len(usable_rows) > thresh_needed_rows:
+    if len(usable_rows) >= thresh_needed_rows:
         LOGGER.info(
             f"Fully visible rows found: {len(usable_rows)=}, {usable_rows=}, {thresh_needed_rows=}"
         )
@@ -630,6 +630,40 @@ def check_overlap(cluster_in, saved_darts, thresh_overlapping_points=1):
             overlapping_darts.append(overlapping_dart)
 
     return overlapping_darts, overlap_points
+
+
+def check_occlusion_type_of_a_single_cluster(cluster_in, saved_darts):
+    """
+    Determines if and how a detected cluster is occluded by previously detected darts.
+
+    This method takes a cluster (presumably a potential new dart) and checks
+    if it overlaps with any previously detected darts. It then characterizes the type
+    of occlusion if any exists.
+
+    Args:
+        cluster_in (list or numpy.ndarray): The cluster points to check for occlusion.
+        saved_darts (dict): A dictionary containing previously detected darts.
+
+    Returns:
+        dict: If occlusion is detected, returns a dictionary containing:
+            - overlapping_darts: List of previously detected darts that overlap with this cluster
+            - occlusion_kind: Classification of the type of occlusion
+            - overlap_points: Points where overlap occurs
+            - Additional occlusion details from differentiate_overlap function
+            If no occlusion is detected, returns an empty dictionary.
+    """
+    overlapping_darts, overlap_points = check_overlap(cluster_in, saved_darts)
+    if len(overlapping_darts) > 0:
+        overlap_points = np.vstack(overlap_points)
+        occluded_rows = differentiate_overlap(cluster_in, overlap_points)
+        occlusion_dict = {
+            "overlapping_darts": overlapping_darts,
+            "occlusion_kind": occlusion_kind(occluded_rows),
+            "overlap_points": overlap_points,
+        }
+        return occlusion_dict | occluded_rows
+    else:
+        return {}
 
 
 def calculate_position_from_occluded_dart(
@@ -949,6 +983,7 @@ class SingleCamLocalize:
         self.saved_darts = {}
         self.distance = 1
         self.dart = 0
+        self.occlusion_dict = {}
 
         # parameters of the subfunctions
         self.distance_to_bottom_not_arrived = 1  # for dart not yet arrived
@@ -1057,23 +1092,19 @@ class SingleCamLocalize:
         self.distance = 1
 
         cluster_mod = cluster_in
+
         cluster_in = dilate_cluster(
             cluster_in, np.shape(diff_img)[1], self.dilate_cluster_by_n_px
         )
-        overlapping_darts, overlap_points = check_overlap(cluster_in, self.saved_darts)
-        if len(overlapping_darts) > 0:
-            overlap_points = np.vstack(overlap_points)
-            occluded_rows = differentiate_overlap(cluster_in, overlap_points)
-            occlusion_dict = {
-                "overlapping_darts": overlapping_darts,
-                "occlusion_kind": occlusion_kind(occluded_rows),
-                "overlap_points": overlap_points,
-            }
-            occlusion_dict = occlusion_dict | occluded_rows
+        if not self.occlusion_dict:
+            self.occlusion_dict = check_occlusion_type_of_a_single_cluster(
+                cluster_in, self.saved_darts
+            )
 
+        if self.occlusion_dict:
             pos, angle, support, r, error, cluster_mod = (
                 calculate_position_from_occluded_dart(
-                    occlusion_dict,
+                    self.occlusion_dict,
                     cluster_in,
                     diff_img,
                     self.current_img,
@@ -1098,7 +1129,7 @@ class SingleCamLocalize:
             "cluster_mod": cluster_mod,
             "img_pre": self.imgs[-self.distance - 1],
         }
-
+        self.occlusion_dict = {}
         return self.saved_darts[f"d{self.dart}"]
 
     def multiple_clusters_detected(self, diff_img, clusters_in, clusters_out):
@@ -1112,19 +1143,20 @@ class SingleCamLocalize:
 
         # check fully usable clusters:
         fully_usable_clusters = []
+        occlusion_dicts = []
         for nr, cluster_in in enumerate(clusters_in):
             cluster_in = dilate_cluster(
                 cluster_in, np.shape(diff_img)[1], self.dilate_cluster_by_n_px
             )
-            overlapping_darts, overlap_points = check_overlap(
+            occlusion_dict = check_occlusion_type_of_a_single_cluster(
                 cluster_in, self.saved_darts
             )
-            if len(overlapping_darts) > 0:
-                overlap_points = np.vstack(overlap_points)
-                occluded_rows = differentiate_overlap(cluster_in, overlap_points)
-                if occlusion_kind(occluded_rows) == "fully_useable":
-                    fully_usable_clusters.append(nr)
+            if occlusion_dict["occlusion_kind"] == "fully_useable":
+                fully_usable_clusters.append(nr)
+                occlusion_dicts.append(occlusion_dict)
+
         if len(fully_usable_clusters) == 1:
+            self.occlusion_dict = occlusion_dicts[fully_usable_clusters[0]]
             return self.incoming_cluster_detected(
                 diff_img, clusters_in[fully_usable_clusters[0]]
             )
@@ -1132,8 +1164,11 @@ class SingleCamLocalize:
             cluster_sizes = []
             for idx, nr in enumerate(fully_usable_clusters):
                 cluster_sizes.append(len(clusters_in[fully_usable_clusters[idx]]))
+
+            biggest_cluster_idx = fully_usable_clusters[np.argmax(cluster_sizes)]
+            self.occlusion_dict = occlusion_dicts[biggest_cluster_idx]
             return self.incoming_cluster_detected(
-                diff_img, clusters_in[fully_usable_clusters[np.argmax(cluster_sizes)]]
+                diff_img, clusters_in[biggest_cluster_idx]
             )
 
         overlapping_darts, overlap_points = check_overlap(
