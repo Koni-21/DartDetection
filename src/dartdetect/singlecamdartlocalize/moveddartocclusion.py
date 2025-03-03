@@ -24,6 +24,22 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(cluster, left=True):
+    """
+    Reduces a cluster of points to only one point per row, preserving either the rightmost or leftmost pixel in each row.
+
+    This function processes a cluster (represented as a numpy array of [row, col] coordinates) and
+    returns a new array containing only one pixel per row - either the rightmost pixel (maximum column value)
+    when left=True or the leftmost pixel (minimum column value) when left=False.
+
+    Args:
+        cluster (numpy.ndarray): A numpy array of shape (n, 2) where each row represents a pixel coordinate [row, col].
+        left (bool, optional): If True, preserve the rightmost pixel of each row. If False, preserve the leftmost pixel.
+            Defaults to True.
+
+    Returns:
+        numpy.ndarray: A numpy array containing one pixel per row, with shape (m, 2) where m is the number of unique rows
+        in the input cluster.
+    """
     if left:
         return np.array(
             [
@@ -46,6 +62,23 @@ def calculate_angle_of_different_clusters(
     which_side_overlap,
     occluded_rows_clusters,
 ):
+    """
+    Calculate angles for different clusters based on occlusion conditions.
+    This function processes each cluster according to its occlusion state and
+    calculates an angle for it. Clusters with different occlusion patterns
+    (left side, right side, or fully usable) are handled using different
+    preprocessing methods before angle calculation.
+
+    Args:
+        diff_img: Difference image used for position and angle calculation.
+        clusters: List of pixel clusters to process.
+        which_side_overlap: Dictionary or list indicating occlusion state for each cluster
+                           (e.g., "left_side_fully_occluded", "right_side_fully_occluded",
+                           "fully_usable").
+        occluded_rows_clusters: Information about which rows are occluded in each cluster.
+    Returns:
+        dict: Dictionary mapping cluster IDs to their calculated angles.
+    """
     angle_of_clusters = {}
     for cluster_id, cluster in enumerate(clusters):
         if which_side_overlap[cluster_id] == "right_side_fully_occluded":
@@ -81,6 +114,26 @@ def calculate_angle_of_different_clusters(
 
 
 def combine_clusters_based_on_the_angle(clusters, angle_of_clusters):
+    """
+    Combines pairs of clusters that have similar angles within a specified tolerance.
+
+    This function compares all possible pairs of clusters and creates new combined
+    clusters for pairs whose corresponding angles are close to each other (within
+    a tolerance of 5 degrees). The combined clusters are formed by vertically
+    stacking the points of the original clusters.
+
+    Note: If multiple clusters have similar angles (e.g., clusters A, B, and C),
+    the function will create separate combined clusters for each pair (e.g., A+B, B+C, A+C),
+    rather than a single combined cluster (e.g., A+B+C).
+
+    Args:
+        clusters (list): List of clusters, where each cluster is a collection of points.
+        angle_of_clusters (list): List of angles corresponding to each cluster.
+
+    Returns:
+        list: A list of combined clusters, where each combined cluster is formed by
+              vertically stacking the points of a pair of clusters with similar angles.
+    """
     combined_clusters = []
     for (cluster_id_1, cluster_1), (cluster_id_2, cluster_2) in itertools.combinations(
         enumerate(clusters), 2
