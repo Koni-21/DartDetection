@@ -80,7 +80,7 @@ class SingleCamLocalize:
         self.current_diff_img = None
 
         self.saved_darts = {}
-        self.distance = 1
+        self.nr_imgs_distance = 1
         self.dart = 0
         self.occlusion_dict = {}
 
@@ -135,7 +135,7 @@ class SingleCamLocalize:
         """
         imgs = self.imgs
 
-        diff_img = compare_imgs(imgs[-(self.distance + 1)], self.current_img)
+        diff_img = compare_imgs(imgs[-(self.nr_imgs_distance + 1)], self.current_img)
         self.current_diff_img = diff_img
         clusters_in, clusters_out = try_get_clusters_in_out(
             diff_img,
@@ -184,11 +184,11 @@ class SingleCamLocalize:
             not dart_fully_arrived(
                 np.shape(diff_img)[0], cluster_in, self.distance_to_bottom_not_arrived
             )
-            and self.distance < 2
+            and self.nr_imgs_distance < 2
         ):
-            self.distance = 2
+            self.nr_imgs_distance = 2
             return None
-        self.distance = 1
+        self.nr_imgs_distance = 1
 
         cluster_mod = cluster_in
 
@@ -226,7 +226,7 @@ class SingleCamLocalize:
             "error": error,
             "cluster": cluster_in,
             "cluster_mod": cluster_mod,
-            "img_pre": self.imgs[-self.distance - 1],
+            "img_pre": self.imgs[-self.nr_imgs_distance - 1],
         }
         self.occlusion_dict = {}
         return self.saved_darts[f"d{self.dart}"]
@@ -236,8 +236,8 @@ class SingleCamLocalize:
             f"More than one new cluster found: {len(clusters_in)=}, {len(clusters_out)=}). "
         )
 
-        if self.distance < 2:
-            self.distance = 2
+        if self.nr_imgs_distance < 2:
+            self.nr_imgs_distance = 2
             return None
 
         # check fully usable clusters:
@@ -402,7 +402,7 @@ class SingleCamLocalize:
         ax.imshow(self.current_img, cmap="gray")
 
         colors = [
-            "",
+            "aquamarine",
             "red",
             "blue",
             "green",
@@ -452,7 +452,7 @@ class SingleCamLocalize:
                 linewidth=1,
                 alpha=0.8,
             )
-        ax.legend()
+        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", borderaxespad=0.0)
 
 
 if __name__ == "__main__":

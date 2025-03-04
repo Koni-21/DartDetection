@@ -1,6 +1,21 @@
-matplotlib==3.8.4
-numpy==1.23.5
-opencv_python==4.8.1.78
-scipy==1.13.1
-ultralytics==8.0.221
-scikit-learn==1.6.0
+matplotlib
+numpy
+opencv_python
+scipy
+scikit-learn
+
+# # Optional for Notebooks
+# # Core Jupyter Notebook packages
+# notebook
+# jupyterlab
+# ipython
+# ipykernel
+
+# # Jupyter Notebook utilities
+# nbformat
+# nbconvert
+# jupyter_client
+# ipywidgets
+
+# # Data analysis
+# pandas

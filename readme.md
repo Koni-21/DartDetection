@@ -1,8 +1,8 @@
 # Sub Project: Dart Localization
 
- This sub-project focuses on localizing steel darts on a dartboard using two (or more) cameras. To detect the darts in the camera images a CNN is used (YOLO). The localization of the darts from two perspectives is done by stereo camera calibration. 
+ This sub-project focuses on localizing steel darts on a dartboard using two (or more) cameras. To detect the darts in the camera images a difference image between two consecutive images in combination with linear regression is used. The localization of the darts from two perspectives is done by stereo camera calibration. 
 
-Read more in:
+Read more in (Dokumentation of a deprecated version):
 [Sub Project: Dart localization](/assets/240229_Projectwork_dart_localization.pdf)
 
 The full e-steel dart project is still in development and not yet released.
@@ -30,6 +30,13 @@ The stereo calibration is derived from: https://github.com/TemugeB/python_stereo
     python -m venv venv
     source venv/bin/activate   # On Windows use `venv\Scripts\activate`
 ```
+Or using Conda:
+
+```bash
+    conda create -n dart python=3.12
+    conda activate dart   # On Windows use `venv\Scripts\activate`
+```
+
 3. **Install the Required Packages:**
 ```bash
     pip install -r requirements.txt

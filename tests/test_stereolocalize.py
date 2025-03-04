@@ -1,8 +1,12 @@
 import unittest
+
 import numpy as np
-from matplotlib import pyplot as plt
+import matplotlib
+
+matplotlib.use("Agg")
 
 import dartdetect.stereolocalize as dl
+import dartdetect.calibration.saveandloadcalibdata as sl_calib
 
 
 class Teststereolocalizefunctions(unittest.TestCase):
@@ -70,8 +74,19 @@ class Teststereolocalizefunctions(unittest.TestCase):
 
 class TestStereoLocalize(unittest.TestCase):
     def setUp(self):
-        # Set up calibration data
-        self.calib_dict = {
+        """Set up test environment"""
+        # Create temp directory using unittest's temporary directory
+        import tempfile
+        import pathlib
+
+        tmp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)  # Ensure cleanup after test
+
+        tmp_path = pathlib.Path(tmp_dir.name)
+        calib_path = tmp_path / "calibration_path"
+        calib_path.mkdir(exist_ok=True)
+
+        calib_dict = {
             "l_mtx": np.array([[1000, 0, 500], [0, 700, 0], [0, 0, 1]]),
             "l_dist": np.array([0, 0, 0, 0, 0]),
             "r_mtx": np.array([[1100, 0, 550], [0, 900, 450], [0, 0, 1]]),
@@ -83,11 +98,28 @@ class TestStereoLocalize(unittest.TestCase):
         }
 
         # Create DartDetect instance
-        self.dart_detect = dl.StereoLocalize(self.calib_dict)
+        sl_calib.save_calibration_matrix(
+            calib_path, calib_dict["l_mtx"], calib_dict["l_dist"], "left"
+        )
+        sl_calib.save_calibration_matrix(
+            calib_path,
+            calib_dict["r_mtx"],
+            calib_dict["r_dist"],
+            "right",
+        )
+        sl_calib.save_steroecalibration(
+            calib_path,
+            calib_dict["R_cl_cr_2d"],
+            calib_dict["T_cl_cr_2d"],
+        )
+        sl_calib.save_transformation_cl_cw(
+            calib_path,
+            calib_dict["R_cl_cw_2d"],
+            calib_dict["T_cl_cw_2d"],
+        )
+        self.dart_detect = dl.StereoLocalize(calib_path)
 
     def test_init(self):
-        self.assertEqual(self.dart_detect.calib_dict, self.calib_dict)
-
         expected_pl = np.array([[1000, 500, 0], [0, 1, 0]])
         expected_pr = np.array([[550, -1100, -24750], [1, 0, 45]])
         expected_tr_c1_cw = np.array([[0.7, 0.7, 32], [-0.7, 0.7, 32], [0, 0, 1]])

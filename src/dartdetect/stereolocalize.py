@@ -1,9 +1,9 @@
-import pathlib
 import logging
 import numpy as np
 from matplotlib import pyplot as plt
 from scipy.linalg import svd
 from dartdetect.dartboardgeometry import DartboardGeometry
+import dartdetect.calibration.saveandloadcalibdata as sl_calib
 
 logging.basicConfig(level=logging.INFO)
 LOGGER = logging.getLogger()
@@ -79,13 +79,15 @@ def tr_c1_cw():
 
 
 class StereoLocalize(DartboardGeometry):
-    def __init__(self, calib_dict):
+    def __init__(self, calib_path):
         """
         Initializes the DartDetect class.
 
         Args:
-            calib_dict: dict, calibration dictionary containing camera parameters
+            calib_path(str or path object): path to the calibration folder
+                with a dictionary containing camera parameters.
         """
+        calib_dict = sl_calib.load_calibration_data(path=calib_path)
         super().__init__()
         self.calib_dict = calib_dict
 
@@ -146,12 +148,13 @@ class StereoLocalize(DartboardGeometry):
 
 
 if __name__ == "__main__":
+    import pathlib
+
     import matplotlib.pyplot as plt
-    import dartdetect.calibration.saveandloadcalibdata as sl_calib
     from matplotlib.widgets import Slider, Button
 
-    calib_dict = sl_calib.load_calibration_data(path="data/calibration_matrices")
-    SL = StereoLocalize(calib_dict)
+    path = "data/calibration_matrices"
+    SL = StereoLocalize(path)
 
     fig = SL.plot_dartboard_emtpy()
     fig.subplots_adjust(bottom=0.25)
