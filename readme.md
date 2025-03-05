@@ -49,11 +49,9 @@ Or using Conda:
 ```bash
     python src\dartdetect\stereolocalize.py
 ```
-6. **Test the AI-based dart detection with an example image**
+6. **Test the dart detection with examples images**
 ```bash
     python src\dartdetect\dartlocalize.py    
 ```
-
-7. **Train your own model and calibrate your own setup**
 
 See [Sub Project: Dart localization](/assets/240229_Projectwork_dart_localization.pdf) and use the example code at the end of each module as an entry point to play around. Also, take into account the tests to determine the appropriate usage of the functions.
