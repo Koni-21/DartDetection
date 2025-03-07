@@ -1,19 +1,22 @@
 import numpy as np
+from typing import List, Union, Optional
 
 
 ## simulation functions
-def draw_dart_subpixel(img, x_pos, angle, width):
+def draw_dart_subpixel(
+    img: np.ndarray, x_pos: float, angle: float, width: float
+) -> np.ndarray:
     """
     Generate an image with a black bar of adjustable position, angle, and thickness.
     The image is represented as a NumPy array with subpixel accuracy achieved via
     grayscale gradients.
 
     Args:
-        img (np.array): input image.
-        x_pos (float): Horizontal position of the bar's center (subpixel accuracy).
-        angle (float): Angle of the bar in degrees (clockwise).
-        width (int): Thickness of the bar in pixels.
-        array_shape (tuple): Shape of the array (height, width).
+        img: input image.
+        x_pos: Horizontal position of the bar's center (subpixel accuracy).
+        angle: Angle of the bar in degrees (clockwise).
+        width: Thickness of the bar in pixels.
+        array_shape: Shape of the array (height, width).
 
     Returns:
         np.ndarray: The generated image as a 2D array.
@@ -46,12 +49,12 @@ def draw_dart_subpixel(img, x_pos, angle, width):
 
 
 def generate_test_images(
-    img=np.ones([5, 20]),
-    positions=[5, 10, 15],
-    angles=[3, 2, 9],
-    widths=[2, 2, 3],
-    move_darts=[0, 0, 1],
-):
+    img: np.ndarray = np.ones([5, 20]),
+    positions: List[float] = [5, 10, 15],
+    angles: List[float] = [3, 2, 9],
+    widths: List[float] = [2, 2, 3],
+    move_darts: List[int] = [0, 0, 1],
+) -> List[np.ndarray]:
     imgs = []
 
     imgs.append(img.copy())
@@ -75,6 +78,6 @@ def generate_test_images(
     return imgs
 
 
-def add_noise(img, noise):
+def add_noise(img: np.ndarray, noise: float) -> np.ndarray:
     img -= np.random.random_sample(np.shape(img)) * noise
     return np.clip(img, 0, 1)
