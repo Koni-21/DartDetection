@@ -74,6 +74,7 @@ class SingleCamLocalize:
     """
 
     def __init__(self):
+        self.image_empty = None
         self.image_count = 0
         self.imgs = []
         self.current_img = None
@@ -116,6 +117,8 @@ class SingleCamLocalize:
         img = filter_noise(img, self.thresh_noise)
         self.imgs.append(img)
         self.image_count += 1
+        if self.image_count == 1:
+            self.image_empty = img
         self.current_img = img
         if self.image_count >= 2:
             if len(self.imgs) > 3:
@@ -156,10 +159,34 @@ class SingleCamLocalize:
             )
         elif len(clusters_in) > 1:
             return self.multiple_clusters_detected(diff_img, clusters_in, clusters_out)
-        elif len(clusters_out) == 1:
-            return self.leaving_cluster_detected(diff_img, clusters_out[0])
-        elif len(clusters_out) > 1:
+        elif len(clusters_out) >= 1:
+            self.check_view_empty()
             return self.leaving_cluster_detected(diff_img, np.vstack(clusters_out))
+
+    def check_view_empty(self):
+        """
+        Detects if the view is empty and updates the saved darts accordingly.
+
+        Args:
+            diff_img (numpy.ndarray): The difference image used to detect changes.
+        Returns:
+            None
+        """
+        diff_img = compare_imgs(self.image_empty, self.current_img)
+        clusters_in, clusters_out = try_get_clusters_in_out(
+            diff_img,
+            thresh_binarise=self.thresh_binarise_cluster,
+            thresh_n_pixels_dart=self.thresh_n_pixels_dart_cluster,
+            dbscan_eps=self.dbscan_eps_cluster,
+            dbscan_min_samples=self.dbscan_min_samples_cluster,
+        )
+        if len(clusters_out) > 0:
+            LOGGER.warning("View of the camera was not emtpy at the start. Restarting.")
+            self.reset()
+        elif len(clusters_in) == 0:
+            LOGGER.info("View of the camera is empty. Restarting.")
+            self.reset()
+        return None
 
     def incoming_cluster_detected(self, diff_img, cluster_in):
         """
