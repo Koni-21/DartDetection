@@ -1,5 +1,7 @@
 import logging
 import itertools
+from typing import Dict, List, Tuple, Optional, Union
+
 import numpy as np
 
 ### Cases with multiple clusters detected
@@ -23,7 +25,9 @@ logging.basicConfig(
 LOGGER = logging.getLogger(__name__)
 
 
-def _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(cluster, left=True):
+def _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(
+    cluster: np.ndarray, left: bool = True
+) -> np.ndarray:
     """
     Reduces a cluster of points to only one point per row, preserving either the rightmost or leftmost pixel in each row.
 
@@ -57,11 +61,11 @@ def _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(cluster, left
 
 
 def calculate_angle_of_different_clusters(
-    diff_img,
-    clusters,
-    which_side_overlap,
-    occluded_rows_clusters,
-):
+    diff_img: np.ndarray,
+    clusters: List[np.ndarray],
+    which_side_overlap: Dict[int, str],
+    occluded_rows_clusters: Dict[int, List[int]],
+) -> Dict[int, float]:
     """
     Calculate angles for different clusters based on occlusion conditions.
     This function processes each cluster according to its occlusion state and
@@ -70,16 +74,17 @@ def calculate_angle_of_different_clusters(
     preprocessing methods before angle calculation.
 
     Args:
-        diff_img: Difference image used for position and angle calculation.
-        clusters: List of pixel clusters to process.
-        which_side_overlap: Dictionary or list indicating occlusion state for each cluster
+        diff_img (numpy.ndarray): Difference image used for position and angle calculation.
+        clusters (List[numpy.ndarray]): List of pixel clusters to process.
+        which_side_overlap (Dict[int, str]): Dictionary indicating occlusion state for each cluster
                            (e.g., "left_side_fully_occluded", "right_side_fully_occluded",
                            "fully_usable").
-        occluded_rows_clusters: Information about which rows are occluded in each cluster.
+        occluded_rows_clusters (Dict[int, List[int]]): Information about which rows are occluded in each cluster.
+
     Returns:
-        dict: Dictionary mapping cluster IDs to their calculated angles.
+        Dict[int, float]: Dictionary mapping cluster IDs to their calculated angles.
     """
-    angle_of_clusters = {}
+    angle_of_clusters: Dict[int, float] = {}
     for cluster_id, cluster in enumerate(clusters):
         if which_side_overlap[cluster_id] == "right_side_fully_occluded":
             cluster_reduced = (
@@ -105,15 +110,17 @@ def calculate_angle_of_different_clusters(
             )
             cluster_reduced = cluster
 
-        pos, angle, support, _, _ = calculate_position_from_cluster_and_image(
+        _, angle, _, _, _ = calculate_position_from_cluster_and_image(
             diff_img, cluster_reduced, weighted=False
         )
         angle_of_clusters[cluster_id] = angle
-        print(f"{angle=}")
+        LOGGER.debug(f"Calculated angle={angle} for cluster {cluster_id}")
     return angle_of_clusters
 
 
-def combine_clusters_based_on_the_angle(clusters, angle_of_clusters):
+def combine_clusters_based_on_the_angle(
+    clusters: List[np.ndarray], angle_of_clusters: Dict[int, float]
+) -> List[np.ndarray]:
     """
     Combines pairs of clusters that have similar angles within a specified tolerance.
 
@@ -127,19 +134,23 @@ def combine_clusters_based_on_the_angle(clusters, angle_of_clusters):
     rather than a single combined cluster (e.g., A+B+C).
 
     Args:
-        clusters (list): List of clusters, where each cluster is a collection of points.
-        angle_of_clusters (list): List of angles corresponding to each cluster.
+        clusters (List[numpy.ndarray]): List of clusters, where each cluster is a collection of points.
+        angle_of_clusters (Dict[int, float]): Dictionary of angles corresponding to each cluster.
 
     Returns:
-        list: A list of combined clusters, where each combined cluster is formed by
+        List[numpy.ndarray]: A list of combined clusters, where each combined cluster is formed by
               vertically stacking the points of a pair of clusters with similar angles.
     """
-    combined_clusters = []
+    combined_clusters: List[np.ndarray] = []
+    angle_tolerance: float = 5.0
+
     for (cluster_id_1, cluster_1), (cluster_id_2, cluster_2) in itertools.combinations(
         enumerate(clusters), 2
     ):
         if np.isclose(
-            angle_of_clusters[cluster_id_1], angle_of_clusters[cluster_id_2], atol=5
+            angle_of_clusters[cluster_id_1],
+            angle_of_clusters[cluster_id_2],
+            atol=angle_tolerance,
         ):
             combined_clusters.append(np.vstack([cluster_1, cluster_2]))
     return combined_clusters

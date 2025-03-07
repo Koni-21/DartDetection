@@ -1,6 +1,7 @@
 import unittest
 import unittest.mock
 import pytest
+from typing import Dict, List, Tuple, Any
 
 import numpy as np
 import io
@@ -14,7 +15,7 @@ from dartdetect.singlecamdartlocalize.moveddartocclusion import (
 
 
 class TestReduceCluster(unittest.TestCase):
-    def test_reduce_cluster_left_true(self):
+    def test_reduce_cluster_left_true(self) -> None:
         # Test keeping rightmost pixel when left=True
         cluster = np.array([[1, 5], [1, 8], [2, 3], [2, 6], [3, 4]])
         expected = np.array([[1, 8], [2, 6], [3, 4]])
@@ -23,7 +24,7 @@ class TestReduceCluster(unittest.TestCase):
         )
         np.testing.assert_array_equal(result, expected)
 
-    def test_reduce_cluster_left_false(self):
+    def test_reduce_cluster_left_false(self) -> None:
         # Test keeping leftmost pixel when left=False
         cluster = np.array([[1, 5], [1, 8], [2, 3], [2, 6], [3, 4]])
         expected = np.array([[1, 5], [2, 3], [3, 4]])
@@ -32,16 +33,17 @@ class TestReduceCluster(unittest.TestCase):
         )
         np.testing.assert_array_equal(result, expected)
 
-    def test_reduce_cluster_single_point(self):
+    def test_reduce_cluster_single_point(self) -> None:
         # Test with a single point
         cluster = np.array([[5, 10]])
         expected = np.array([[5, 10]])
         result = _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(cluster)
         np.testing.assert_array_equal(result, expected)
 
-    def test_reduce_cluster_same_row_different_columns(self):
+    def test_reduce_cluster_same_row_different_columns(self) -> None:
         # Test with multiple points all on same row
         cluster = np.array([[7, 1], [7, 3], [7, 5], [7, 2]])
+
         # Should keep only maximum column for left=True
         expected_left = np.array([[7, 5]])
         result = _reduce_cluster_to_only_one_angle_conserving_pixel_of_each_row(
@@ -64,7 +66,9 @@ class TestCalculateAngleOfDifferentClusters(unittest.TestCase):
     @unittest.mock.patch(
         "dartdetect.singlecamdartlocalize.moveddartocclusion.filter_cluster_by_usable_rows"
     )
-    def test_calculate_angle_different_clusters(self, mock_filter, mock_calc_pos):
+    def test_calculate_angle_different_clusters(
+        self, mock_filter: unittest.mock.Mock, mock_calc_pos: unittest.mock.Mock
+    ) -> None:
         # Setup mock returns
         mock_filter.return_value = np.array([[5, 1], [6, 2], [7, 3]])
         mock_calc_pos.side_effect = [
@@ -75,27 +79,25 @@ class TestCalculateAngleOfDifferentClusters(unittest.TestCase):
 
         # Create test data
         diff_img = np.ones((10, 10))
-        clusters = [
+        clusters: List[np.ndarray] = [
             np.array([[1, 5], [1, 8], [2, 6]]),  # right_side_fully_occluded
             np.array([[3, 2], [3, 7], [4, 5]]),  # left_side_fully_occluded
             np.array([[5, 1], [6, 2], [7, 3]]),  # fully_usable
         ]
 
-        which_side_overlap = {
+        which_side_overlap: Dict[int, str] = {
             0: "right_side_fully_occluded",
             1: "left_side_fully_occluded",
             2: "fully_usable",
         }
 
-        occluded_rows_clusters = {0: [], 1: [], 2: [5, 6, 7]}
+        occluded_rows_clusters: Dict[int, List[int]] = {0: [], 1: [], 2: [5, 6, 7]}
 
-        # Call the function (suppress print output)
-        captured_output = io.StringIO()
-        sys.stdout = captured_output
-        result = calculate_angle_of_different_clusters(
-            diff_img, clusters, which_side_overlap, occluded_rows_clusters
-        )
-        sys.stdout = sys.__stdout__
+        # Redirect stdout to suppress print output
+        with unittest.mock.patch("sys.stdout", new=io.StringIO()):
+            result = calculate_angle_of_different_clusters(
+                diff_img, clusters, which_side_overlap, occluded_rows_clusters
+            )
 
         # Verify results
         self.assertEqual(len(result), 3)
@@ -108,16 +110,20 @@ class TestCalculateAngleOfDifferentClusters(unittest.TestCase):
 
 
 class TestCombineClustersBasedOnTheAngle(unittest.TestCase):
-    def test_combine_clusters_based_on_the_angle(self):
+    def test_combine_clusters_based_on_the_angle(self) -> None:
         # Create test clusters
-        clusters = [
+        clusters: List[np.ndarray] = [
             np.array([[1, 1], [2, 2]]),
             np.array([[3, 3], [4, 4]]),
             np.array([[5, 5], [6, 6]]),
         ]
 
         # Angles that will cause clusters 0 and 2 to be combined (within 5 degrees)
-        angle_of_clusters = {0: 30.0, 1: 45.0, 2: 32.0}  # Within 5 degrees of cluster 0
+        angle_of_clusters: Dict[int, float] = {
+            0: 30.0,
+            1: 45.0,
+            2: 32.0,
+        }  # Within 5 degrees of cluster 0
 
         # Call the function
         result = combine_clusters_based_on_the_angle(clusters, angle_of_clusters)
@@ -129,15 +135,15 @@ class TestCombineClustersBasedOnTheAngle(unittest.TestCase):
         expected_combined = np.vstack([clusters[0], clusters[2]])
         np.testing.assert_array_equal(result[0], expected_combined)
 
-    def test_no_clusters_with_similar_angles(self):
+    def test_no_clusters_with_similar_angles(self) -> None:
         # Test when no clusters have similar angles
-        clusters = [
+        clusters: List[np.ndarray] = [
             np.array([[1, 1], [2, 2]]),
             np.array([[3, 3], [4, 4]]),
             np.array([[5, 5], [6, 6]]),
         ]
         # All angles differ by more than 5 degrees
-        angle_of_clusters = {0: 30.0, 1: 40.0, 2: 50.0}
+        angle_of_clusters: Dict[int, float] = {0: 30.0, 1: 40.0, 2: 50.0}
 
         result = combine_clusters_based_on_the_angle(clusters, angle_of_clusters)
 
@@ -145,16 +151,16 @@ class TestCombineClustersBasedOnTheAngle(unittest.TestCase):
         self.assertEqual(len(result), 0)
         self.assertEqual(result, [])
 
-    def test_multiple_pairs_with_similar_angles(self):
+    def test_multiple_pairs_with_similar_angles(self) -> None:
         # Test when multiple pairs of clusters have similar angles
-        clusters = [
+        clusters: List[np.ndarray] = [
             np.array([[1, 1], [2, 2]]),
             np.array([[3, 3], [4, 4]]),
             np.array([[5, 5], [6, 6]]),
             np.array([[7, 7], [8, 8]]),
         ]
         # Clusters 0 and 2 are similar, and clusters 1 and 3 are similar
-        angle_of_clusters = {0: 30.0, 1: 60.0, 2: 32.0, 3: 62.0}
+        angle_of_clusters: Dict[int, float] = {0: 30.0, 1: 60.0, 2: 32.0, 3: 62.0}
 
         result = combine_clusters_based_on_the_angle(clusters, angle_of_clusters)
 
@@ -175,15 +181,15 @@ class TestCombineClustersBasedOnTheAngle(unittest.TestCase):
                 )
             )
 
-    def test_three_clusters_with_similar_angles(self):
+    def test_three_clusters_with_similar_angles(self) -> None:
         # Test when three clusters all have similar angles
-        clusters = [
+        clusters: List[np.ndarray] = [
             np.array([[1, 1], [2, 2]]),
             np.array([[3, 3], [4, 4]]),
             np.array([[5, 5], [6, 6]]),
         ]
         # All clusters have angles within 5 degrees of each other
-        angle_of_clusters = {0: 30.0, 1: 32.0, 2: 34.0}
+        angle_of_clusters: Dict[int, float] = {0: 30.0, 1: 32.0, 2: 34.0}
 
         result = combine_clusters_based_on_the_angle(clusters, angle_of_clusters)
 
@@ -204,20 +210,20 @@ class TestCombineClustersBasedOnTheAngle(unittest.TestCase):
                 )
             )
 
-    def test_empty_clusters_list(self):
+    def test_empty_clusters_list(self) -> None:
         # Test with empty clusters list
-        clusters = []
-        angle_of_clusters = {}
+        clusters: List[np.ndarray] = []
+        angle_of_clusters: Dict[int, float] = {}
 
         result = combine_clusters_based_on_the_angle(clusters, angle_of_clusters)
 
         # Should return empty list
         self.assertEqual(result, [])
 
-    def test_single_cluster(self):
+    def test_single_cluster(self) -> None:
         # Test with just one cluster
-        clusters = [np.array([[1, 1], [2, 2]])]
-        angle_of_clusters = {0: 45.0}
+        clusters: List[np.ndarray] = [np.array([[1, 1], [2, 2]])]
+        angle_of_clusters: Dict[int, float] = {0: 45.0}
 
         result = combine_clusters_based_on_the_angle(clusters, angle_of_clusters)
 
