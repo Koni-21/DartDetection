@@ -10,6 +10,7 @@ from dartdetect.singlecamdartlocalize.dartclusteranalysis import (
     find_clusters,
     try_get_clusters_in_out,
     lin_regression_on_cluster,
+    calculate_position_from_cluster_and_image,
 )
 
 
@@ -330,3 +331,70 @@ class TestLinRegressionOnCluster(unittest.TestCase):
         self.assertListEqual(x, expected_x)
         self.assertListEqual(y, expected_y)
         self.assertAlmostEqual(error, expected_error)
+
+
+class TestCalculatePositionFromClusterAndImage(unittest.TestCase):
+
+    def test_calculate_position_simple(self):
+        img = np.array(
+            [
+                [1, 0, 1, 1, 1],
+                [1, 0, 1, 1, 1],
+                [1, 0, 1, 1, 1],
+                [1, 0, 1, 1, 1],
+            ]
+        )
+        cluster = np.array([[0, 1], [1, 1], [2, 1], [3, 1]])
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
+            img, cluster
+        )
+        expected_pos = 1.0
+        expected_angle_pred = 0.0
+        expected_support = 4
+        expected_r = 1.0
+        self.assertAlmostEqual(pos, expected_pos, places=2)
+        self.assertAlmostEqual(angle_pred, expected_angle_pred, places=2)
+        self.assertEqual(support, expected_support)
+        self.assertAlmostEqual(r, expected_r, places=2)
+
+    def test_calculate_position_diagonal(self):
+        img = np.array(
+            [
+                [0, 1, 1, 1, 1],
+                [1, 0, 1, 1, 1],
+                [1, 1, 0, 1, 1],
+                [1, 1, 1, 0, 1],
+            ]
+        )
+        cluster = np.array([[0, 0], [1, 1], [2, 2], [3, 3]])
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
+            img, cluster
+        )
+        expected_pos = 3.0
+        expected_angle_pred = -45.0
+        expected_support = 4
+        expected_r = 1
+        self.assertAlmostEqual(pos, expected_pos, places=2)
+        self.assertAlmostEqual(angle_pred, expected_angle_pred, places=2)
+        self.assertEqual(support, expected_support)
+        self.assertAlmostEqual(r, expected_r, places=2)
+
+    def test_calculate_position_not_weighted(self):
+        img = np.array(
+            [
+                [1, 0.2, 0.4, 1, 1],
+                [1, 0.1, 0.5, 0.2, 1],
+            ]
+        )
+        cluster = np.array([[0, 1], [0, 2], [1, 1], [1, 2], [1, 3]])
+        pos, angle_pred, support, r, error = calculate_position_from_cluster_and_image(
+            img, cluster, weighted=False
+        )
+        expected_pos = 2.0
+        expected_angle_pred = -26.57
+        expected_support = 2
+        expected_r = 1.0
+        self.assertAlmostEqual(pos, expected_pos, places=2)
+        self.assertAlmostEqual(angle_pred, expected_angle_pred, places=2)
+        self.assertEqual(support, expected_support)
+        self.assertAlmostEqual(r, expected_r, places=2)

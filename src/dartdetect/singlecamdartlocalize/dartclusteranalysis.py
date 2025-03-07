@@ -3,39 +3,41 @@ import numpy as np
 from sklearn.cluster import DBSCAN
 
 
-def filter_noise(img, thresh):
+def filter_noise(img: np.ndarray, thresh: float) -> np.ndarray:
     """
     Filters noise from the input image based on a threshold.
 
     Args:
-        img (numpy.ndarray): The input image to be filtered.
-        thesh (float): The threshold value for filtering noise. Values in the image
-                    below (1 - thesh) will be kept, and values above or equal to
-                    (1 - thesh) will be set to 1.
+        img: The input image to be filtered.
+        thresh: The threshold value for filtering noise. Values in the image
+                below (1 - thresh) will be kept, and values above or equal to
+                (1 - thresh) will be set to 1.
 
     Returns:
-        numpy.ndarray: The filtered image with noise reduced.
+        The filtered image with noise reduced.
     """
     return np.where(img < (1 - thresh), img, 1)
 
 
-def compare_imgs(previous_img, current_img):
+def compare_imgs(previous_img: np.ndarray, current_img: np.ndarray) -> np.ndarray:
     """
     Compare two images by subtracting the previous image from the
     current image and adding 1. This way a incoming dart (0 < values < 1)
     and a removed dart (1 < values < 2) can be detected.
 
     Args:
-        previous_img (numpy.ndarray): The previous image.
-        current_img (numpy.ndarray): The current image.
+        previous_img: The previous image.
+        current_img: The current image.
 
     Returns:
-        numpy.ndarray: The result of the comparison.
+        The result of the comparison.
     """
     return current_img - previous_img + 1
 
 
-def get_roi_coords(diff_img, incoming=True, thresh_binarise=0.1):
+def get_roi_coords(
+    diff_img: np.ndarray, incoming: bool = True, thresh_binarise: float = 0.1
+) -> np.ndarray:
     """
     Get the coordinates of incoming or leaving darts/ pixels in the given image.
 
@@ -43,14 +45,15 @@ def get_roi_coords(diff_img, incoming=True, thresh_binarise=0.1):
     darker (incoming) or brighter (leaving) than a specified threshold.
 
     Args:
-        img (numpy.ndarray): The input image as a NumPy array.
-        thresh_binarise (float, optional): The threshold for binarising the image.
+        diff_img: The input image as a NumPy array.
+        incoming: Whether to look for incoming or leaving darts.
+        thresh_binarise: The threshold for binarising the image.
             Pixels with values less than (1 - thresh_binarise) are considered
             part of the dart (ROI). Default is 0.1.
 
     Returns:
-        numpy.ndarray: An array of coordinates (row, column) of the pixels that are
-                    part of the ROI.
+        An array of coordinates (row, column) of the pixels that are
+        part of the ROI.
     """
     if incoming:
         diff_img_in = np.clip(
@@ -67,20 +70,23 @@ def get_roi_coords(diff_img, incoming=True, thresh_binarise=0.1):
 
 
 def find_clusters(
-    coordinates, thresh_n_pixels_dart=10, dbscan_eps=1, dbscan_min_samples=2
-):
+    coordinates: np.ndarray,
+    thresh_n_pixels_dart: int = 10,
+    dbscan_eps: int = 1,
+    dbscan_min_samples: int = 2,
+) -> list[np.ndarray]:
     """
     Apply DBSCAN clustering to a set of coordinates and filter clusters
     based on a pixel count threshold.
 
     Args:
-        coordinates (array-like): An array of coordinate points to be clustered.
-        thresh_n_pixels_dart (int, optional): The minimum number of points
-            required in a cluster to be considered valid. Default is 10.
-        dbscan_eps (int): See sklearn.cluster.DBSCAN. (Defaults to 1)
-        dbscan_min_samples (int): See sklearn.cluster.DBSCAN. (Defaults to 1)
+        coordinates: An array of coordinate points to be clustered.
+        thresh_n_pixels_dart: The minimum number of points
+            required in a cluster to be considered valid.
+        dbscan_eps: See sklearn.cluster.DBSCAN.
+        dbscan_min_samples: See sklearn.cluster.DBSCAN.
     Returns:
-        list: A list of arrays, each containing the coordinates of a valid cluster.
+        A list of arrays, each containing the coordinates of a valid cluster.
     """
     # Apply DBSCAN clustering (like flood fill with nearest neighbor = 1)
     dbscan_cluster_in = DBSCAN(eps=dbscan_eps, min_samples=dbscan_min_samples).fit(
@@ -98,31 +104,30 @@ def find_clusters(
 
 
 def try_get_clusters_in_out(
-    diff_img,
-    thresh_binarise=0.1,
-    thresh_n_pixels_dart=2,
-    dbscan_eps=1,
-    dbscan_min_samples=1,
-):
+    diff_img: np.ndarray,
+    thresh_binarise: float = 0.1,
+    thresh_n_pixels_dart: int = 2,
+    dbscan_eps: int = 1,
+    dbscan_min_samples: int = 1,
+) -> tuple[list[np.ndarray], list[np.ndarray]]:
     """
     Attempts to get clusters of coordinates from regions of interest (ROI)
     in an image.
 
     Args:
-        img (ndarray): The input image from which to extract ROI coordinates.
-        thresh_binarise (float, optional): The threshold value for binarizing
-            the image. Default is 0.1.
-        thresh_n_pixels_dart (int, optional): The minimum number of pixels
-            required to consider a cluster as a dart. Default is 2.
-        dbscan_eps (int): See sklearn.cluster.DBSCAN. (Defaults to 1)
-        dbscan_min_samples (int): See sklearn.cluster.DBSCAN. (Defaults to 1)
+        diff_img: The input image from which to extract ROI coordinates.
+        thresh_binarise: The threshold value for binarizing the image.
+        thresh_n_pixels_dart: The minimum number of pixels
+            required to consider a cluster as a dart.
+        dbscan_eps: See sklearn.cluster.DBSCAN.
+        dbscan_min_samples: See sklearn.cluster.DBSCAN.
 
     Returns:
-        tuple: A tuple containing two elements:
-            - clusters_in (list or None): List of clusters found in the
-                incoming ROI, or None if no clusters are found.
-            - clusters_out (list or None): List of clusters found in the
-                outgoing ROI, or None if no clusters are found.
+        A tuple containing two elements:
+            - clusters_in: List of clusters found in the incoming ROI,
+                or empty list if no clusters are found.
+            - clusters_out: List of clusters found in the outgoing ROI,
+                or empty list if no clusters are found.
     """
     coords_in = get_roi_coords(diff_img, incoming=True, thresh_binarise=thresh_binarise)
     coords_out = get_roi_coords(
@@ -146,20 +151,22 @@ def try_get_clusters_in_out(
     return clusters_in, clusters_out
 
 
-def weighted_average_rows(img, cluster):
+def weighted_average_rows(
+    img: np.ndarray, cluster: np.ndarray
+) -> tuple[list[int], list[float], int]:
     """
     Calculate the weighted average column positions for each unique row in the cluster.
 
     Args:
-        img (np.ndarray): The input image array.
-        cluster (np.ndarray): A 2D array where each row represents a point with
-                              [row_index, col_index].
+        img: The input image array.
+        cluster: A 2D array where each row represents a point with
+                [row_index, col_index].
     Returns:
-        tuple: A tuple containing:
-            - height_idx (list): List of unique row indices from the cluster.
-            - averaged_row_width_position (list): List of weighted average column positions
-                                                  corresponding to each row index.
-            - error (int): Placeholder for error, currently always returns 0.
+        A tuple containing:
+            - height_idx: List of unique row indices from the cluster.
+            - averaged_row_width_position: List of weighted average column positions
+                                          corresponding to each row index.
+            - error: Placeholder for error, currently always returns 0.
     """
     row_mean = {}
     for row in np.unique(cluster[:, 0]):
@@ -176,20 +183,20 @@ def weighted_average_rows(img, cluster):
     return height_idx, averaged_row_width_position, error
 
 
-def average_rows(cluster):
+def average_rows(cluster: np.ndarray) -> tuple[list[int], list[float], float]:
     """
     Calculate the average column index for each unique row in the given cluster.
 
     Args:
-        cluster (numpy.ndarray): A 2D array where each row represents a point with
-                                 the first column as the row index and the second
-                                 column as the column index.
+        cluster: A 2D array where each row represents a point with
+                the first column as the row index and the second
+                column as the column index.
     Returns:
-        tuple: A tuple containing:
-            - height_idx (list): A list of unique row indices.
-            - averaged_row_width_position (list): A list of average column indices
-                                                  corresponding to each unique row.
-            - error (float): An error estimation value based on the number of unique rows.
+        A tuple containing:
+            - height_idx: A list of unique row indices.
+            - averaged_row_width_position: A list of average column indices
+                                          corresponding to each unique row.
+            - error: An error estimation value based on the number of unique rows.
     """
     row_mean = {}
     for row in np.unique(cluster[:, 0]):
@@ -209,32 +216,33 @@ def average_rows(cluster):
     return height_idx, averaged_row_width_position, error
 
 
-def lin_regression_on_cluster(img, cluster, weighted=True):
+def lin_regression_on_cluster(
+    img: np.ndarray, cluster: np.ndarray, weighted: bool = True
+) -> tuple[float, float, float, list[int], list[float], float]:
     """
     Perform linear regression on a cluster of points in an image.
     This function calculates the row-wise mean of the cluster points in the image,
     then fits a line through these points using linear regression.
 
     Args:
-        img (numpy.ndarray): The input image as a 2D numpy array.
-        cluster (numpy.ndarray): A 2D numpy array where each row represents
+        img: The input image as a 2D numpy array.
+        cluster: A 2D numpy array where each row represents
             a point in the cluster, with the first column being the row indices
             and the second column being the column indices of the points in
             the image.
-        weighted (bool): Calculate the regression weighted on image values or
-            only unweighted using only the cluster. Defaults to True.
-
+        weighted: Calculate the regression weighted on image values or
+            only unweighted using only the cluster.
 
     Returns:
-        tuple: A tuple containing:
-            - pos (float): The the hitpoint of the dart as x-coordinate in the
+        A tuple containing:
+            - pos: The the hitpoint of the dart as x-coordinate in the
                 image corrdinate system. (The y-intercept of the fitted line at the
                 maximum row index.)
-            - w0 (float): The y-intercept of the fitted line.
-            - w1 (float): The slope of the fitted line.
-            - x (list): The list of row indices used for the regression.
-            - y (list): The list of mean column indices corresponding to the row indices.
-            - error (float): Estimator of the position discretization error
+            - w0: The y-intercept of the fitted line.
+            - w1: The slope of the fitted line.
+            - x: The list of row indices used for the regression.
+            - y: The list of mean column indices corresponding to the row indices.
+            - error: Estimator of the position discretization error
     """
 
     if weighted:
@@ -258,29 +266,33 @@ def lin_regression_on_cluster(img, cluster, weighted=True):
     return (pos, w0, w1, x, y, pos_discretization_error)
 
 
-def calculate_position_from_cluster_and_image(img, cluster, weighted=True):
+def calculate_position_from_cluster_and_image(
+    img: np.ndarray, cluster: np.ndarray, weighted: bool = True
+) -> tuple[float, float, int, float, float]:
     """
     Calculate the position, angle, support, and correlation coefficient
     from a given image and cluster.
 
     Args:
-        img (numpy.ndarray): The image data.
-        cluster (list): A list of points representing the cluster.
-        weighted (bool): Calculate the regression weighted on image values or
-            only unweighted using only the cluster. Defaults to True.
+        img: The image data.
+        cluster: A list of points representing the cluster.
+        weighted: Calculate the regression weighted on image values or
+            only unweighted using only the cluster.
 
     Returns:
-        tuple: A tuple containing:
-            - pos (tuple): The calculated position.
-            - angle_pred (float): The predicted angle in degrees.
-            - support (int): The number of points in the cluster.
-            - r (float): The correlation coefficient between x and y
+        A tuple containing:
+            - pos: The calculated position.
+            - angle_pred: The predicted angle in degrees.
+            - support: The number of points in the cluster.
+            - r: The correlation coefficient between x and y
                 coordinates of the cluster points.
-            - error (float): Estimator of the position discretization error
+            - error: Estimator of the position discretization error
     """
     pos, b, m, x, y, error = lin_regression_on_cluster(img, cluster, weighted=weighted)
     angle_pred = np.degrees(np.arctan(-1 * m))
     with np.errstate(divide="ignore", invalid="ignore"):
         r = np.corrcoef(x, y)[0][1]
+    if np.isnan(r):
+        r = 1
     support = len(np.unique(cluster[:, 0]))
     return pos, angle_pred, support, r, error
