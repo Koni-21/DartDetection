@@ -373,12 +373,16 @@ class SingleCamLocalize:
         and error.
 
         Returns:
-            dict: A dictionary with keys "pos", "angle", "r", "support", and "error",
+            dict: A dictionary with keys "dart", "pos", "angle", "r", "support", and "error",
                   containing the corresponding values for the current dart.
         """
+        relevant_outputs = ["dart", "pos", "angle", "r", "support", "error"]
+        if self.dart == 0:
+            dart_dict = {key: None for key in relevant_outputs}
+        else:
+            dart_dict = self.saved_darts[f"d{self.dart}"]
+            dart_dict["dart"] = f"d{self.dart}"
 
-        dart_dict = self.saved_darts[f"d{self.dart}"]
-        relevant_outputs = ["pos", "angle", "r", "support", "error"]
         return {key: dart_dict[key] for key in relevant_outputs}
 
     def visualize_stream(self, ax=None):
@@ -413,46 +417,65 @@ class SingleCamLocalize:
             "pink",
             "olive",
         ]
-        for dart, dart_dict in self.saved_darts.items():
-            cluster_in = dart_dict["cluster"]
-            cluster_mod = dart_dict["cluster_mod"]
-            diff_img = dart_dict["img_pre"]
-            angle = dart_dict["angle"]
-            pos = dart_dict["pos"]
 
-            ax.scatter(
-                cluster_in[:, 1],
-                cluster_in[:, 0],
-                c=colors[int(dart[-1])],
-                s=2,
-                marker="x",
-                alpha=0.4,
-                label=dart,
-            )
+        try:
+            for dart, dart_dict in self.saved_darts.items():
+                cluster_in = dart_dict["cluster"]
+                cluster_mod = dart_dict["cluster_mod"]
+                diff_img = dart_dict["img_pre"]
+                angle = dart_dict["angle"]
+                pos = dart_dict["pos"]
 
-            ax.scatter(
-                cluster_mod[:, 1],
-                cluster_mod[:, 0],
-                c=colors[int(dart[-1])],
-                s=10,
-                alpha=0.6,
-                marker="x",
-            )
-            y = np.arange(0, np.shape(diff_img)[0])
-            x = (
-                np.tan(np.radians(angle * -1)) * y
-                + pos
-                - np.tan(np.radians(angle * -1)) * max(y)
-            )
-            ax.plot(
-                x,
-                y,
-                color="cyan",
-                linestyle="-",
-                linewidth=1,
-                alpha=0.8,
-            )
-        ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", borderaxespad=0.0)
+                ax.scatter(
+                    cluster_in[:, 1],
+                    cluster_in[:, 0],
+                    c=colors[int(dart[-1])],
+                    s=2,
+                    marker="x",
+                    alpha=0.4,
+                    label=dart,
+                )
+
+                ax.scatter(
+                    cluster_mod[:, 1],
+                    cluster_mod[:, 0],
+                    c=colors[int(dart[-1])],
+                    s=10,
+                    alpha=0.6,
+                    marker="x",
+                )
+                y = np.arange(0, np.shape(diff_img)[0])
+                x = (
+                    np.tan(np.radians(angle * -1)) * y
+                    + pos
+                    - np.tan(np.radians(angle * -1)) * max(y)
+                )
+                ax.plot(
+                    x,
+                    y,
+                    color="cyan",
+                    linestyle="-",
+                    linewidth=1,
+                    alpha=0.8,
+                )
+            ax.legend(bbox_to_anchor=(1.05, 1), loc="upper left", borderaxespad=0.0)
+        except Exception as e:
+            print(f"Skipped error in visualize_stream: {e}")
+
+    def reset(self):
+        """
+        Resets the SingleCamLocalize object to its initial state.
+
+        This method resets the image count, images list, current image, saved darts,
+        distance, and dart count to their initial values.
+        """
+        self.image_count = 0
+        self.imgs = []
+        self.current_img = None
+        self.saved_darts = {}
+        self.nr_imgs_distance = 1
+        self.dart = 0
+        self.occlusion_dict = {}
 
 
 if __name__ == "__main__":

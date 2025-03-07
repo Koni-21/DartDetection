@@ -79,7 +79,7 @@ def tr_c1_cw():
 
 
 class StereoLocalize(DartboardGeometry):
-    def __init__(self, calib_path):
+    def __init__(self, calib_path, fig=None):
         """
         Initializes the DartDetect class.
 
@@ -88,7 +88,7 @@ class StereoLocalize(DartboardGeometry):
                 with a dictionary containing camera parameters.
         """
         calib_dict = sl_calib.load_calibration_data(path=calib_path)
-        super().__init__()
+        super().__init__(fig)
         self.calib_dict = calib_dict
 
         R_l2d = self.calib_dict["R_cl_cr_2d"]
@@ -174,26 +174,38 @@ if __name__ == "__main__":
     button_clear = Button(ax_button_clear, "Clear", color=axcolor, hovercolor="0.975")
 
     dart_point_text = None
+    i = 1
 
     def update_plot(event):
         global dart_point_text
+        global i
         ul = slider_ul.val
         ur = slider_ur.val
         dart_point = SL.get_dartpoint_from_Cu(ul, ur)
         if dart_point_text:
             dart_point_text.remove()
         dart_point_text = plt.text(
-            0, 0, f"Dart Point: {dart_point}", transform=plt.gcf().transFigure
+            0.5,
+            0.95,
+            f"Score: {dart_point}",
+            transform=plt.gcf().transFigure,
+            fontsize=20,
+            horizontalalignment="center",
         )
 
-        fig = SL.plot_dartposition_from_Cu(ul, ur, nr=f"({ul:.1f}, {ur:.1f})")
+        fig = SL.plot_dartposition_from_Cu(ul, ur, nr=f" D{i} ({ul:.1f}, {ur:.1f})")
         fig.canvas.draw_idle()
+        i += 1
 
     def clear_plot(event):
+        global dart_point_text
+        global i
         if dart_point_text:
             dart_point_text.remove()
+        i = 0
         fig = SL.plot_dartboard_emtpy()
         fig.canvas.draw_idle()
+        dart_point_text = None
 
     button.on_clicked(update_plot)
     button_clear.on_clicked(clear_plot)

@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 
 
 class DartboardGeometry:
-    def __init__(self):
+    def __init__(self, fig=None):
         """generate a parametrized dartboard in cm coordinates
 
         contains a function to read out points of position:
@@ -47,7 +47,10 @@ class DartboardGeometry:
             6,
         ]
 
-        self.fig, self.ax = plt.subplots(figsize=(10, 10))
+        if fig is None:
+            self.fig, self.ax = plt.subplots(figsize=(10, 10))
+        else:
+            self.fig, self.ax = fig, fig.gca()
 
     def _cart2pol(self, x, y):
         rho = np.sqrt(x**2 + y**2)

@@ -175,7 +175,7 @@ def occlusion_kind(occluded_rows, thresh_needed_rows=2):
         )
         return "right_side_fully_occluded"
     else:
-        raise ValueError(f"Undefined overlap case: {occluded_rows}")
+        return f"Undefined overlap case"
 
 
 def check_overlap(cluster_in, saved_darts, thresh_overlapping_points=1):
